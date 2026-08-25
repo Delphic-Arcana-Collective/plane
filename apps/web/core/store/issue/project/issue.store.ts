@@ -13,6 +13,10 @@ import type {
   IssuePaginationOptions,
   TIssuesResponse,
   TBulkOperationsPayload,
+  TGroupedIssues,
+  TSubGroupedIssues,
+  TGroupedIssueCount,
+  TIssuePaginationData,
 } from "@plane/types";
 // helpers
 // base class
@@ -22,6 +26,13 @@ import { BaseIssuesStore } from "../helpers/base-issues.store";
 import type { IIssueRootStore } from "../root.store";
 import type { IProjectIssuesFilter } from "./filter.store";
 import { isLinearReadOnly, LINEAR_READ_ONLY_VIEW_FLAGS } from "@/helpers/linear-display.helper";
+
+type TLinearProjectIssueCache = {
+  groupedIssueIds: TGroupedIssues | TSubGroupedIssues;
+  groupedIssueCount: TGroupedIssueCount;
+  issuePaginationData: TIssuePaginationData;
+  paginationOptions: IssuePaginationOptions | undefined;
+};
 
 export interface IProjectIssues extends IBaseIssuesStore {
   viewFlags: ViewFlags;
@@ -60,6 +71,32 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   issueFilterStore: IProjectIssuesFilter;
   /** Project id for the issues currently loaded in groupedIssueIds. */
   loadedProjectId: string | null = null;
+  private linearProjectIssueCache = new Map<string, TLinearProjectIssueCache>();
+
+  private cacheCurrentProjectIssues(projectId: string) {
+    if (!isLinearReadOnly() || !this.groupedIssueIds) return;
+
+    this.linearProjectIssueCache.set(projectId, {
+      groupedIssueIds: this.groupedIssueIds,
+      groupedIssueCount: { ...this.groupedIssueCount },
+      issuePaginationData: { ...this.issuePaginationData },
+      paginationOptions: this.paginationOptions,
+    });
+  }
+
+  private restoreCachedProjectIssues(projectId: string): boolean {
+    const cached = this.linearProjectIssueCache.get(projectId);
+    if (!cached) return false;
+
+    runInAction(() => {
+      this.groupedIssueIds = cached.groupedIssueIds;
+      this.groupedIssueCount = cached.groupedIssueCount;
+      this.issuePaginationData = cached.issuePaginationData;
+      this.paginationOptions = cached.paginationOptions;
+      this.loadedProjectId = projectId;
+    });
+    return true;
+  }
 
   get viewFlags(): ViewFlags {
     if (isLinearReadOnly()) {
@@ -118,7 +155,17 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     options: IssuePaginationOptions,
     isExistingPaginationOptions: boolean = false
   ) => {
-    const sequence = this.beginFetch(loadType, !isExistingPaginationOptions);
+    const isLinearMode = isLinearReadOnly();
+    const isProjectSwitch = this.loadedProjectId !== null && this.loadedProjectId !== projectId;
+
+    if (isLinearMode && isProjectSwitch && this.loadedProjectId && this.groupedIssueIds) {
+      this.cacheCurrentProjectIssues(this.loadedProjectId);
+    }
+
+    const restoredFromCache = isLinearMode && isProjectSwitch && this.restoreCachedProjectIssues(projectId);
+    const preserveIssueList = restoredFromCache || (!isProjectSwitch && !!this.groupedIssueIds);
+
+    const sequence = this.beginFetch(loadType, !isExistingPaginationOptions, preserveIssueList);
 
     try {
       // get params from pagination options
@@ -135,6 +182,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       runInAction(() => {
         this.loadedProjectId = projectId;
       });
+      this.cacheCurrentProjectIssues(projectId);
       return response;
     } catch (error) {
       if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;

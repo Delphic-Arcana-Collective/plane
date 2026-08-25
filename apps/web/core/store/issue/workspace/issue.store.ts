@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { action, makeObservable, runInAction } from "mobx";
+import { action, makeObservable } from "mobx";
 // base class
 import type {
   IssuePaginationOptions,
@@ -16,6 +16,7 @@ import type {
 } from "@plane/types";
 // services
 import { WorkspaceService } from "@/services/workspace.service";
+import { isLinearAllIssuesView } from "@/helpers/linear-display.helper";
 // types
 import type { IBaseIssuesStore } from "../helpers/base-issues.store";
 import { BaseIssuesStore } from "../helpers/base-issues.store";
@@ -101,13 +102,10 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
     options: IssuePaginationOptions,
     isExistingPaginationOptions: boolean = false
   ) => {
-    try {
-      // set loader and clear store
-      runInAction(() => {
-        this.setLoader(loadType);
-      });
-      this.clear(!isExistingPaginationOptions);
+    const preserveIssueList = isLinearAllIssuesView(viewId) && !!this.groupedIssueIds;
+    const sequence = this.beginFetch(loadType, !isExistingPaginationOptions, preserveIssueList);
 
+    try {
       // get params from pagination options
       const params = this.issueFilterStore?.getFilterParams(options, viewId, undefined, undefined, undefined);
       // call the fetch issues API with the params
@@ -115,10 +113,13 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
         signal: this.controller.signal,
       });
 
+      if (this.isStaleFetch(sequence)) return;
+
       // after fetching issues, call the base method to process the response further
       this.onfetchIssues(response, options, workspaceSlug, undefined, undefined, !isExistingPaginationOptions);
       return response;
     } catch (error) {
+      if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
       // set loader to undefined if errored out
       this.setLoader(undefined);
       throw error;
@@ -139,6 +140,9 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
     const cursorObject = this.getPaginationData(groupId, subGroupId);
     // if there are no pagination options and the next page results do not exist the return
     if (!this.paginationOptions || (cursorObject && !cursorObject?.nextPageResults)) return;
+
+    const sequence = this.bumpFetchSequence();
+
     try {
       // set Loader
       this.setLoader("pagination", groupId, subGroupId);
@@ -154,10 +158,13 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
       // call the fetch issues API with the params for next page in issues
       const response = await this.workspaceService.getViewIssues(workspaceSlug, params);
 
+      if (this.isStaleFetch(sequence)) return;
+
       // after the next page of issues are fetched, call the base method to process the response
       this.onfetchNexIssues(response, groupId, subGroupId);
       return response;
     } catch (error) {
+      if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
       // set Loader as undefined if errored out
       this.setLoader(undefined, groupId, subGroupId);
       throw error;

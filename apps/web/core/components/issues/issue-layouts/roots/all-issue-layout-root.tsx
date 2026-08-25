@@ -104,7 +104,9 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
     workspaceSlug && globalViewId ? `WORKSPACE_GLOBAL_VIEW_ISSUES_${workspaceSlug}_${globalViewId}` : null,
     async () => {
       if (workspaceSlug && globalViewId) {
-        clear();
+        if (!isLinearAllIssuesView(globalViewId) || !groupedIssueIds) {
+          clear();
+        }
         toggleLoading(true);
         await fetchFilters(workspaceSlug, globalViewId);
         const displayFilters = issuesFilter.getIssueFilters(globalViewId)?.displayFilters;
