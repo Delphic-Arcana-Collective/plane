@@ -30,6 +30,7 @@ export function createServer(env: Env, cacheBackend: CacheBackend) {
     c.set("env", env);
     c.set("cache", cacheBackend);
     await cacheBackend.ensureLoaded();
+    c.header("Cache-Control", "no-store");
     await next();
   });
 

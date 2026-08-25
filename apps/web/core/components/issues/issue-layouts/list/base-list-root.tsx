@@ -87,9 +87,9 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
     issuesFilter?.issueFilters?.kanbanFilters || ({ group_by: [], sub_group_by: [] } as TIssueKanbanFilters);
 
   useEffect(() => {
-    if (!displayFilters) return;
+    if (!displayFilters || !workspaceSlug || !projectId) return;
     fetchIssues("init-loader", { canGroup: true, perPageCount: group_by ? 50 : 100 }, viewId);
-  }, [fetchIssues, storeType, group_by, viewId, layout, displayFilters]);
+  }, [fetchIssues, storeType, group_by, viewId, layout, displayFilters, workspaceSlug, projectId]);
 
   const groupedIssueIds = issues?.groupedIssueIds as TGroupedIssues | undefined;
   // auth

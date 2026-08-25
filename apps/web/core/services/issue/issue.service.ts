@@ -43,10 +43,11 @@ export class IssueService extends APIService {
     queries?: any,
     config = {}
   ): Promise<TIssuesResponse> {
+    const encodedProjectId = encodeURIComponent(projectId);
     const path =
       (queries.expand as string)?.includes("issue_relation") && !queries.group_by
-        ? `/api/workspaces/${workspaceSlug}/projects/${projectId}/${this.serviceType}-detail/`
-        : `/api/workspaces/${workspaceSlug}/projects/${projectId}/${this.serviceType}/`;
+        ? `/api/workspaces/${workspaceSlug}/projects/${encodedProjectId}/${this.serviceType}-detail/`
+        : `/api/workspaces/${workspaceSlug}/projects/${encodedProjectId}/${this.serviceType}/`;
     return this.get(
       path,
       {

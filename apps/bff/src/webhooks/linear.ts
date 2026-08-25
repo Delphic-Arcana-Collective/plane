@@ -48,6 +48,19 @@ function isTimestampFresh(timestampHeader: string | null): boolean {
   return Math.abs(Date.now() - timestamp) <= MAX_TIMESTAMP_SKEW_MS;
 }
 
+async function waitForWebhookSync(env: Env, cache: KvCacheBackend, attempt = 0): Promise<void> {
+  if (attempt >= 20) {
+    console.error("[bff] Webhook sync gave up after waiting for in-progress sync");
+    return;
+  }
+
+  const result = await runSync(env, cache, { reason: "webhook" });
+  if (result === "completed" || result === "failed") return;
+
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  return waitForWebhookSync(env, cache, attempt + 1);
+}
+
 export async function handleLinearWebhook(
   request: Request,
   env: Env,
@@ -97,7 +110,7 @@ export async function handleLinearWebhook(
   }
 
   ctx.waitUntil(
-    runSync(env, cache, { reason: "webhook" }).catch((error) => {
+    waitForWebhookSync(env, cache).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       console.error("[bff] Webhook sync failed:", message);
     })

@@ -10,14 +10,25 @@ import {
 import {
   assemblePlaneCache,
   deserializeCacheMeta,
+  deserializePlaneCache,
   getProjectUserPropertiesKey,
   KV_KEYS,
   mergeProjectUserProperties,
   serializeCacheMeta,
-  serializePlaneCacheMaps,
+  serializePlaneCache,
 } from "./serialization.js";
 import { MemoryCacheBackend } from "./store.js";
 import { EMPTY_PROJECT_USER_PROPERTIES } from "./user-properties.js";
+
+const LEGACY_KV_KEYS = [
+  KV_KEYS.workspace,
+  KV_KEYS.projects,
+  KV_KEYS.states,
+  KV_KEYS.labels,
+  KV_KEYS.issues,
+  KV_KEYS.comments,
+  KV_KEYS.users,
+] as const;
 
 export class KvCacheBackend extends MemoryCacheBackend implements KvCacheBackendInterface {
   private loaded = false;
@@ -28,6 +39,17 @@ export class KvCacheBackend extends MemoryCacheBackend implements KvCacheBackend
   }
 
   override async ensureLoaded(): Promise<void> {
+    const snapshotRaw = await this.kv.get(KV_KEYS.snapshot);
+    if (snapshotRaw) {
+      const snapshot = deserializePlaneCache(snapshotRaw);
+      if (this.loaded && this.loadedAt === snapshot.lastFetchedAt) return;
+
+      this.replaceCache(snapshot);
+      this.loaded = true;
+      this.loadedAt = snapshot.lastFetchedAt;
+      return;
+    }
+
     const metaRaw = await this.kv.get(KV_KEYS.meta);
     if (!metaRaw) {
       this.loaded = true;
@@ -38,6 +60,11 @@ export class KvCacheBackend extends MemoryCacheBackend implements KvCacheBackend
     const meta = deserializeCacheMeta(metaRaw);
     if (this.loaded && this.loadedAt === meta.lastFetchedAt) return;
 
+    // Legacy multi-key layout (pre-snapshot): load, then migrate to atomic blob.
+    await this.loadLegacyShards(meta);
+  }
+
+  private async loadLegacyShards(meta: ReturnType<typeof deserializeCacheMeta>): Promise<void> {
     const [workspaceRaw, projectsRaw, statesRaw, labelsRaw, issuesRaw, commentsRaw, usersRaw] = await Promise.all([
       this.kv.get(KV_KEYS.workspace),
       this.kv.get(KV_KEYS.projects),
@@ -58,21 +85,23 @@ export class KvCacheBackend extends MemoryCacheBackend implements KvCacheBackend
     );
     this.loaded = true;
     this.loadedAt = meta.lastFetchedAt;
+
+    if (this.cache.ready) {
+      await this.persistSnapshot();
+    }
   }
 
   private async persistSnapshot(): Promise<void> {
     const cache = this.cache;
-    const maps = serializePlaneCacheMaps(cache);
-    await Promise.all([
-      this.kv.put(KV_KEYS.meta, serializeCacheMeta(cache)),
-      this.kv.put(KV_KEYS.workspace, JSON.stringify(cache.workspace)),
-      this.kv.put(KV_KEYS.projects, JSON.stringify(cache.projects)),
-      this.kv.put(KV_KEYS.states, maps.states),
-      this.kv.put(KV_KEYS.labels, maps.labels),
-      this.kv.put(KV_KEYS.issues, maps.issues),
-      this.kv.put(KV_KEYS.comments, maps.comments),
-      this.kv.put(KV_KEYS.users, maps.users),
-    ]);
+    const snapshotBlob = serializePlaneCache(cache);
+
+    // 1. Write full snapshot blob (atomic unit for readers).
+    await this.kv.put(KV_KEYS.snapshot, snapshotBlob);
+    // 2. Publish meta pointer only after snapshot is complete.
+    await this.kv.put(KV_KEYS.meta, serializeCacheMeta(cache));
+    // 3. Remove legacy shards so nothing reads a mixed generation.
+    await Promise.all(LEGACY_KV_KEYS.map((key) => this.kv.delete(key)));
+
     this.loaded = true;
     this.loadedAt = cache.lastFetchedAt;
   }
@@ -86,7 +115,7 @@ export class KvCacheBackend extends MemoryCacheBackend implements KvCacheBackend
   override async setError(message: string): Promise<void> {
     await super.setError(message);
     if (this.loaded) {
-      await this.kv.put(KV_KEYS.meta, serializeCacheMeta(this.cache));
+      await this.persistSnapshot();
     }
   }
 
@@ -96,13 +125,8 @@ export class KvCacheBackend extends MemoryCacheBackend implements KvCacheBackend
     this.loadedAt = null;
     await Promise.all([
       this.kv.delete(KV_KEYS.meta),
-      this.kv.delete(KV_KEYS.workspace),
-      this.kv.delete(KV_KEYS.projects),
-      this.kv.delete(KV_KEYS.states),
-      this.kv.delete(KV_KEYS.labels),
-      this.kv.delete(KV_KEYS.issues),
-      this.kv.delete(KV_KEYS.comments),
-      this.kv.delete(KV_KEYS.users),
+      this.kv.delete(KV_KEYS.snapshot),
+      ...LEGACY_KV_KEYS.map((key) => this.kv.delete(key)),
     ]);
   }
 

@@ -2,6 +2,9 @@ import type { IState, IIssueLabel, TIssue, TIssueComment, IProjectUserProperties
 import type { PlaneCache } from "./backend.js";
 
 export const KV_KEYS = {
+  /** Full cache blob — single atomic snapshot (write/read as one unit). */
+  snapshot: "snapshot:v1",
+  /** Small pointer written after snapshot; must match snapshot.lastFetchedAt. */
   meta: "meta",
   workspace: "workspace",
   projects: "projects",
@@ -114,7 +117,7 @@ export function assemblePlaneCache(
   };
 }
 
-/** @deprecated Single-key blob kept for migration; prefer per-key KV_KEYS storage. */
+/** Full-cache blob format for atomic KV snapshot (see KV_KEYS.snapshot). */
 export interface SerializedPlaneCache {
   ready: boolean;
   lastFetchedAt: string | null;

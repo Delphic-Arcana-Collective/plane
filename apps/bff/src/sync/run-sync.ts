@@ -7,18 +7,20 @@ export interface RunSyncOptions {
   reason?: string;
 }
 
-export async function runSync(env: Env, cache: CacheBackend, options: RunSyncOptions = {}): Promise<void> {
+export type RunSyncResult = "completed" | "skipped" | "failed";
+
+export async function runSync(env: Env, cache: CacheBackend, options: RunSyncOptions = {}): Promise<RunSyncResult> {
   const { retries = 3, reason = "manual" } = options;
 
   if (!env.LINEAR_API_KEY) {
     console.log("[bff] Skipping Linear sync — no API key configured (Phase 0 mock mode)");
-    return;
+    return "skipped";
   }
 
   const acquired = await cache.tryAcquireSyncLock();
   if (!acquired) {
     console.log(`[bff] Sync already in progress, skipping (${reason})`);
-    return;
+    return "skipped";
   }
 
   let attempt = 0;
@@ -38,7 +40,7 @@ export async function runSync(env: Env, cache: CacheBackend, options: RunSyncOpt
         console.log(
           `[bff] Sync complete: ${stats.projects} projects (${stats.teams} teams), ${stats.issues} issues, ${stats.comments} comments, ${stats.states} states, ${stats.labels} labels`
         );
-        return;
+        return "completed";
       } catch (error) {
         lastError = error;
         const message = error instanceof Error ? error.message : String(error);
@@ -52,7 +54,7 @@ export async function runSync(env: Env, cache: CacheBackend, options: RunSyncOpt
 
     const message = lastError instanceof Error ? lastError.message : String(lastError);
     await cache.setError(message);
-    throw lastError;
+    return "failed";
   } finally {
     await cache.releaseSyncLock();
   }
