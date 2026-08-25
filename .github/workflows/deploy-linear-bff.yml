@@ -25,16 +25,16 @@ jobs:
         working-directory: apps/bff
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.3.0
-
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
+
+      - name: Enable Corepack and pnpm
+        run: corepack enable pnpm
+        working-directory: .
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -44,7 +44,6 @@ jobs:
         run: pnpm turbo run check:types --filter=bff --filter=@plane/types
         working-directory: .
 
-      # wrangler secret put calls Cloudflare's API — no manual Dashboard steps needed.
       - name: Sync Worker secrets to Cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -68,6 +67,6 @@ jobs:
           command: deploy
 
       - name: Smoke test health
-        run: |
-          curl -sfS "https://linear.delphic.studio/health" | head -c 500
+        run: curl -sfS "https://linear.delphic.studio/health" | head -c 500
         continue-on-error: true
+        working-directory: .
