@@ -238,9 +238,9 @@ const getModuleColumns = (): IGroupByColumn[] | undefined => {
   return modules;
 };
 
-const getStateColumns = ({ projectId }: TGetColumns): IGroupByColumn[] | undefined => {
-  const { getProjectStates, projectStates } = store.state;
-  const _states = projectId ? getProjectStates(projectId) : projectStates;
+const getStateColumns = ({ projectId, isWorkspaceLevel }: TGetColumns): IGroupByColumn[] | undefined => {
+  const { getProjectStates, projectStates, workspaceStates } = store.state;
+  const _states = projectId ? getProjectStates(projectId) : isWorkspaceLevel ? workspaceStates : projectStates;
   if (!_states) return;
   // map project states to group by columns
   return _states.map((state) => ({

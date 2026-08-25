@@ -14,6 +14,7 @@ import type {
   TLoader,
   ViewFlags,
 } from "@plane/types";
+import { EIssueLayoutTypes } from "@plane/types";
 // services
 import { WorkspaceService } from "@/services/workspace.service";
 import { isLinearAllIssuesView } from "@/helpers/linear-display.helper";
@@ -102,7 +103,10 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
     options: IssuePaginationOptions,
     isExistingPaginationOptions: boolean = false
   ) => {
-    const preserveIssueList = isLinearAllIssuesView(viewId) && !!this.groupedIssueIds;
+    const preserveIssueList =
+      isLinearAllIssuesView(viewId) &&
+      !!this.groupedIssueIds &&
+      this.issueFilterStore?.getIssueFilters(viewId)?.displayFilters?.layout !== EIssueLayoutTypes.KANBAN;
     const sequence = this.beginFetch(loadType, !isExistingPaginationOptions, preserveIssueList);
 
     try {
