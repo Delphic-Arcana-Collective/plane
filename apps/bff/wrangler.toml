@@ -1,0 +1,26 @@
+# Cloudflare Worker — linear.delphic.studio
+# Secrets (wrangler secret put, not in this file):
+#   LINEAR_API_KEY, LINEAR_WEBHOOK_SECRET
+# Account ID: set via `wrangler login` or CLOUDFLARE_ACCOUNT_ID at deploy time.
+
+name = "linear-bff"
+main = "src/worker-entry.ts"
+compatibility_date = "2026-08-25"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+NODE_ENV = "production"
+CORS_ORIGIN = "https://dashboard.delphic.studio"
+PLANE_WORKSPACE_SLUG = "delphic"
+PLANE_WORKSPACE_NAME = "Delphic Arcana Collective"
+MOCK_USER_EMAIL = "dev@linear.local"
+MOCK_USER_NAME = "Linear Viewer"
+SYNC_DEBOUNCE_MS = "30000"
+SYNC_MIN_INTERVAL_MS = "30000"
+SYNC_ON_CACHE_MISS = "true"
+CACHE_INITIAL_FETCH = "true"
+WEB_APP_BASE_URL = "https://dashboard.delphic.studio"
+
+[[kv_namespaces]]
+binding = "LINEAR_CACHE"
+id = "656f7304bff54deb93419c8cdef66918"

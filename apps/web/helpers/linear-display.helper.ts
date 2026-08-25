@@ -49,13 +49,6 @@ export function getBffBaseUrl(): string {
   return import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 }
 
-/** How often the web app checks BFF for new Linear sync data. Match BFF CACHE_POLL_INTERVAL_MS. */
-export function getLinearSyncPollIntervalMs(): number {
-  const raw = import.meta.env.VITE_LINEAR_SYNC_POLL_INTERVAL_MS;
-  const parsed = raw ? Number(raw) : 3000;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3000;
-}
-
 /** BFF maps Linear comment.parent → Plane comment.parent (not in core types yet). */
 export function getLinearCommentParentId(comment: TIssueComment): string | null {
   return (comment as TIssueComment & { parent?: string | null }).parent ?? null;

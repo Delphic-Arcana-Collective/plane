@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cacheStore } from "../src/cache/store.js";
+import { describe, expect, it } from "vitest";
+import { MemoryCacheBackend } from "../src/cache/store.js";
 import {
   TEST_WORKSPACE_SLUG,
-  createTestApp,
+  createReadyTestApp,
   createTestEnv,
   getJson,
   getMockUserId,
@@ -10,6 +10,7 @@ import {
   getTestProjectId,
   seedTestCache,
 } from "./test-utils.js";
+import { createServer } from "../src/server.js";
 
 type RouteCase = {
   name: string;
@@ -277,19 +278,15 @@ const ROUTES: RouteCase[] = [
 ];
 
 describe("bff linear display API routes", () => {
-  afterEach(() => {
-    cacheStore.reset();
-  });
-
   it.each(ROUTES)("$name → $path", async ({ path, expectStatus = 200, assert }) => {
-    const app = createTestApp();
+    const app = await createReadyTestApp();
     const { status, body } = await getJson<unknown>(app, path);
     expect(status).toBe(expectStatus);
     assert?.(body);
   });
 
   it("persists project layout via user-properties patch", async () => {
-    const app = createTestApp();
+    const app = await createReadyTestApp();
     const path = `/api/workspaces/${slug}/projects/${projectId}/user-properties/`;
 
     const patched = await app.request(path, {
@@ -306,13 +303,13 @@ describe("bff linear display API routes", () => {
   });
 
   it("returns 404 for unknown workspace slug", async () => {
-    const app = createTestApp();
+    const app = await createReadyTestApp();
     const { status } = await getJson(app, "/api/workspaces/unknown/projects/");
     expect(status).toBe(404);
   });
 
   it("returns empty issues for unknown project", async () => {
-    const app = createTestApp();
+    const app = await createReadyTestApp();
     const { status, body } = await getJson<{ total_count: number }>(
       app,
       `/api/workspaces/${slug}/projects/unknown-project/issues/`
@@ -322,7 +319,7 @@ describe("bff linear display API routes", () => {
   });
 
   it("filters user issues by assignee", async () => {
-    const app = createTestApp();
+    const app = await createReadyTestApp();
     const { body } = await getJson<{ total_count: number }>(
       app,
       `/api/workspaces/${slug}/user-issues/${userId}/?assignees=${userId}&per_page=10`
@@ -332,8 +329,9 @@ describe("bff linear display API routes", () => {
 
   it("works without LINEAR_API_KEY when cache is seeded", async () => {
     const env = createTestEnv({ LINEAR_API_KEY: undefined });
-    seedTestCache(env);
-    const app = createTestApp(env);
+    const cache = new MemoryCacheBackend();
+    await seedTestCache(cache, env);
+    const app = createServer(env, cache);
     const { status, body } = await getJson<unknown>(app, `/api/workspaces/${slug}/projects/${projectId}/issues/`);
     expect(status).toBe(200);
     expect(body).toHaveProperty("total_count", 2);

@@ -1,32 +1,32 @@
 import { Hono } from "hono";
 import type { Env } from "../env.js";
-import { cacheStore } from "../cache/store.js";
 import { createBootstrapContext } from "../bootstrap/session.js";
-import { matchWorkspace, requireCache, buildProjectIssuesResponse } from "./helpers.js";
+import { getCache, matchWorkspace, requireCache, buildProjectIssuesResponse } from "./helpers.js";
 
 export function createProjectRoutes() {
   const app = new Hono();
 
-  app.get("/api/workspaces/:slug/projects/", (c) => {
+  app.get("/api/workspaces/:slug/projects/", async (c) => {
     if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
-    const blocked = requireCache(c);
+    const blocked = await requireCache(c);
     if (blocked) return blocked;
-    if (cacheStore.cache.ready) return c.json(cacheStore.cache.projects);
+    const { cache } = getCache(c);
+    if (cache.ready) return c.json(cache.projects);
     return c.json([]);
   });
 
-  app.get("/api/workspaces/:slug/projects/details/", (c) => {
+  app.get("/api/workspaces/:slug/projects/details/", async (c) => {
     if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
-    const blocked = requireCache(c);
+    const blocked = await requireCache(c);
     if (blocked) return blocked;
-    return c.json(cacheStore.cache.projects);
+    return c.json(getCache(c).cache.projects);
   });
 
-  app.get("/api/workspaces/:slug/projects/:projectId/", (c) => {
+  app.get("/api/workspaces/:slug/projects/:projectId/", async (c) => {
     if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
-    const blocked = requireCache(c);
+    const blocked = await requireCache(c);
     if (blocked) return blocked;
-    const project = cacheStore.cache.projects.find((p) => p.id === c.req.param("projectId"));
+    const project = getCache(c).cache.projects.find((entry) => entry.id === c.req.param("projectId"));
     if (!project) return c.json({ error: "Not found" }, 404);
     return c.json(project);
   });
@@ -37,19 +37,18 @@ export function createProjectRoutes() {
 export function createStateRoutes() {
   const app = new Hono();
 
-  app.get("/api/workspaces/:slug/states/", (c) => {
+  app.get("/api/workspaces/:slug/states/", async (c) => {
     if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
-    const blocked = requireCache(c);
+    const blocked = await requireCache(c);
     if (blocked) return blocked;
-    return c.json(cacheStore.getWorkspaceStates());
+    return c.json(getCache(c).getWorkspaceStates());
   });
 
-  app.get("/api/workspaces/:slug/projects/:projectId/states/", (c) => {
+  app.get("/api/workspaces/:slug/projects/:projectId/states/", async (c) => {
     if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
-    const blocked = requireCache(c);
+    const blocked = await requireCache(c);
     if (blocked) return blocked;
-    const states = cacheStore.cache.statesByProject.get(c.req.param("projectId")) ?? [];
-    return c.json(states);
+    return c.json(getCache(c).cache.statesByProject.get(c.req.param("projectId")) ?? []);
   });
 
   return app;
@@ -58,19 +57,18 @@ export function createStateRoutes() {
 export function createLabelRoutes() {
   const app = new Hono();
 
-  app.get("/api/workspaces/:slug/projects/:projectId/issue-labels/", (c) => {
+  app.get("/api/workspaces/:slug/projects/:projectId/issue-labels/", async (c) => {
     if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
-    const blocked = requireCache(c);
+    const blocked = await requireCache(c);
     if (blocked) return blocked;
-    const labels = cacheStore.cache.labelsByProject.get(c.req.param("projectId")) ?? [];
-    return c.json(labels);
+    return c.json(getCache(c).cache.labelsByProject.get(c.req.param("projectId")) ?? []);
   });
 
-  app.get("/api/workspaces/:slug/labels/", (c) => {
+  app.get("/api/workspaces/:slug/labels/", async (c) => {
     if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
-    const blocked = requireCache(c);
+    const blocked = await requireCache(c);
     if (blocked) return blocked;
-    return c.json([...cacheStore.cache.labelsByProject.values()].flat());
+    return c.json([...getCache(c).cache.labelsByProject.values()].flat());
   });
 
   return app;
@@ -79,31 +77,31 @@ export function createLabelRoutes() {
 export function createIssueRoutes() {
   const app = new Hono();
 
-  app.get("/api/workspaces/:slug/projects/:projectId/issues/", (c) => {
+  app.get("/api/workspaces/:slug/projects/:projectId/issues/", async (c) => {
     if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
-    const blocked = requireCache(c);
+    const blocked = await requireCache(c);
     if (blocked) return blocked;
     const projectId = c.req.param("projectId");
     const query = c.req.query();
-    const issues = cacheStore.getProjectIssues(projectId, query);
+    const issues = getCache(c).getProjectIssues(projectId, query);
     return c.json(buildProjectIssuesResponse(issues, query));
   });
 
-  app.get("/api/workspaces/:slug/projects/:projectId/issues-detail/", (c) => {
+  app.get("/api/workspaces/:slug/projects/:projectId/issues-detail/", async (c) => {
     if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
-    const blocked = requireCache(c);
+    const blocked = await requireCache(c);
     if (blocked) return blocked;
     const projectId = c.req.param("projectId");
     const query = c.req.query();
-    const issues = cacheStore.getProjectIssues(projectId, query);
+    const issues = getCache(c).getProjectIssues(projectId, query);
     return c.json(buildProjectIssuesResponse(issues, query));
   });
 
-  app.get("/api/workspaces/:slug/projects/:projectId/issues/:issueId/", (c) => {
+  app.get("/api/workspaces/:slug/projects/:projectId/issues/:issueId/", async (c) => {
     if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
-    const blocked = requireCache(c);
+    const blocked = await requireCache(c);
     if (blocked) return blocked;
-    const issue = cacheStore.getIssue(c.req.param("projectId"), c.req.param("issueId"));
+    const issue = getCache(c).getIssue(c.req.param("projectId"), c.req.param("issueId"));
     if (!issue) return c.json({ error: "Not found" }, 404);
     return c.json(issue);
   });
@@ -114,12 +112,13 @@ export function createIssueRoutes() {
 export function createDataWorkspaceRoutes() {
   const app = new Hono();
 
-  app.get("/api/workspaces/:slug/", (c) => {
+  app.get("/api/workspaces/:slug/", async (c) => {
     const env = c.get("env") as Env;
     if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
 
-    if (cacheStore.cache.ready && cacheStore.cache.workspace) {
-      return c.json(cacheStore.cache.workspace);
+    const { cache } = getCache(c);
+    if (cache.ready && cache.workspace) {
+      return c.json(cache.workspace);
     }
 
     const bootstrap = createBootstrapContext(env);
@@ -132,10 +131,11 @@ export function createDataWorkspaceRoutes() {
 export function createDataUserWorkspaceRoutes() {
   const app = new Hono();
 
-  app.get("/api/users/me/workspaces/", (c) => {
+  app.get("/api/users/me/workspaces/", async (c) => {
     const env = c.get("env") as Env;
-    if (cacheStore.cache.ready && cacheStore.cache.workspace) {
-      const ws = cacheStore.cache.workspace;
+    const { cache } = getCache(c);
+    if (cache.ready && cache.workspace) {
+      const ws = cache.workspace;
       return c.json([
         {
           id: ws.id,
@@ -144,7 +144,7 @@ export function createDataUserWorkspaceRoutes() {
           logo_url: ws.logo_url,
           role: 20,
           total_members: ws.total_members,
-          total_projects: cacheStore.cache.projects.length,
+          total_projects: cache.projects.length,
         },
       ]);
     }

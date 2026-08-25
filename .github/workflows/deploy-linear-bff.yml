@@ -1,0 +1,73 @@
+name: Deploy Linear BFF (Worker)
+
+on:
+  push:
+    branches: [preview, main]
+    paths:
+      - "apps/bff/**"
+      - "packages/types/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deploy-linear-bff.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-linear-bff-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/bff
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+
+      - name: Typecheck BFF
+        run: pnpm turbo run check:types --filter=bff --filter=@plane/types
+        working-directory: .
+
+      # wrangler secret put calls Cloudflare's API — no manual Dashboard steps needed.
+      - name: Sync Worker secrets to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          LINEAR_WEBHOOK_SECRET: ${{ secrets.LINEAR_WEBHOOK_SECRET }}
+          LINEAR_WORKSPACE_ID: ${{ secrets.LINEAR_WORKSPACE_ID }}
+        run: |
+          printf '%s' "$LINEAR_API_KEY" | pnpm exec wrangler secret put LINEAR_API_KEY
+          printf '%s' "$LINEAR_WEBHOOK_SECRET" | pnpm exec wrangler secret put LINEAR_WEBHOOK_SECRET
+          if [ -n "$LINEAR_WORKSPACE_ID" ]; then
+            printf '%s' "$LINEAR_WORKSPACE_ID" | pnpm exec wrangler secret put LINEAR_WORKSPACE_ID
+          fi
+
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/bff
+          command: deploy
+
+      - name: Smoke test health
+        run: |
+          curl -sfS "https://linear.delphic.studio/health" | head -c 500
+        continue-on-error: true

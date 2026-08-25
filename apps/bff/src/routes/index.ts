@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { cacheStore } from "../cache/store.js";
 import { createBootstrapContext } from "../bootstrap/session.js";
 import {
   createDataUserWorkspaceRoutes,
@@ -9,6 +8,7 @@ import {
   createProjectRoutes,
   createStateRoutes,
 } from "./data.js";
+import { getCache } from "./helpers.js";
 import { createStubRoutes } from "./stubs.js";
 
 export function createInstanceRoutes() {
@@ -46,25 +46,26 @@ export function createUserRoutes() {
     return c.json(bootstrap.profile);
   });
 
-  app.get("/api/users/me/settings/", (c) => {
+  app.get("/api/users/me/settings/", async (c) => {
     const bootstrap = createBootstrapContext(c.get("env"));
     const settings = { ...bootstrap.settings };
-    if (cacheStore.cache.ready && cacheStore.cache.workspace) {
+    const { cache } = getCache(c);
+    if (cache.ready && cache.workspace) {
       settings.workspace = {
         ...settings.workspace,
-        last_workspace_id: cacheStore.cache.workspace.id,
-        last_workspace_slug: cacheStore.cache.workspace.slug,
-        last_workspace_name: cacheStore.cache.workspace.name,
-        fallback_workspace_id: cacheStore.cache.workspace.id,
-        fallback_workspace_slug: cacheStore.cache.workspace.slug,
+        last_workspace_id: cache.workspace.id,
+        last_workspace_slug: cache.workspace.slug,
+        last_workspace_name: cache.workspace.name,
+        fallback_workspace_id: cache.workspace.id,
+        fallback_workspace_slug: cache.workspace.slug,
       };
     }
     return c.json(settings);
   });
 
-  app.get("/api/users/me/workspaces/:slug/project-roles/", (c) => {
+  app.get("/api/users/me/workspaces/:slug/project-roles/", async (c) => {
     const roles: Record<string, number> = {};
-    for (const project of cacheStore.cache.projects) {
+    for (const project of getCache(c).cache.projects) {
       roles[project.id] = 20;
     }
     return c.json(roles);
@@ -83,11 +84,12 @@ export function createWorkspaceRoutes() {
     return c.json(bootstrap.workspaceMemberMe);
   });
 
-  app.get("/api/workspaces/:slug/members/", (c) => {
+  app.get("/api/workspaces/:slug/members/", async (c) => {
     const bootstrap = createBootstrapContext(c.get("env"));
-    if (cacheStore.cache.users.size > 0) {
+    const users = [...getCache(c).cache.users.values()];
+    if (users.length > 0) {
       return c.json(
-        [...cacheStore.cache.users.values()].map((user) => ({
+        users.map((user) => ({
           id: `member-${user.id}`,
           member: user,
           role: 20,
@@ -126,18 +128,19 @@ export function createRoutes() {
   app.route("/", createIssueRoutes());
   app.route("/", createStubRoutes());
 
-  app.get("/health", (c) =>
-    c.json({
+  app.get("/health", async (c) => {
+    const meta = await getCache(c).getMeta();
+    return c.json({
       status: "ok",
       service: "bff",
       cache: {
-        ready: cacheStore.cache.ready,
-        lastFetchedAt: cacheStore.cache.lastFetchedAt,
-        error: cacheStore.cache.error,
-        stats: cacheStore.cache.stats,
+        ready: meta.ready,
+        lastFetchedAt: meta.lastFetchedAt,
+        error: meta.error,
+        stats: meta.stats,
       },
-    })
-  );
+    });
+  });
 
   return app;
 }

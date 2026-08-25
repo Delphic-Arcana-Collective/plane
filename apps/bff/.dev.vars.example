@@ -1,0 +1,9 @@
+# Local Worker dev (`wrangler dev`). Copy to .dev.vars — never commit .dev.vars
+#
+# Map from ~/.zprofile (do not paste secrets into git):
+#   LINEAR_DELPHIC_WEBHOOK_SIGNING_SECRET → LINEAR_WEBHOOK_SECRET
+
+LINEAR_API_KEY=
+LINEAR_WEBHOOK_SECRET=
+CORS_ORIGIN=http://localhost:3000
+WEB_APP_BASE_URL=http://localhost:3000

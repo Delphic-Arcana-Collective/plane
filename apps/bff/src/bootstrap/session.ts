@@ -170,7 +170,7 @@ export function createBootstrapContext(env: Env) {
         has_llm_configured: false,
         file_size_limit: 5242880,
         is_smtp_configured: false,
-        app_base_url: "http://localhost:3000",
+        app_base_url: env.WEB_APP_BASE_URL,
         space_base_url: "http://localhost:3002",
         admin_base_url: "http://localhost:3001",
         is_self_managed: true,

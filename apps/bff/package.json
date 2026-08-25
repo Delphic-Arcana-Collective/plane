@@ -17,6 +17,8 @@
     "fix:format": "oxfmt .",
     "test": "vitest run",
     "test:browser": "node tests/browser.smoke.mjs",
+    "dev:worker": "wrangler dev",
+    "deploy:worker": "wrangler deploy",
     "clean": "rm -rf .turbo node_modules dist"
   },
   "dependencies": {
@@ -28,6 +30,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250220.0",
     "@plane/typescript-config": "workspace:*",
     "@types/marked": "^6.0.0",
     "@types/node": "catalog:",
@@ -35,6 +38,7 @@
     "tsdown": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "wrangler": "^4.0.0"
   }
 }

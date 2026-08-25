@@ -1,7 +1,5 @@
 import { Hono } from "hono";
-import { cacheStore } from "../cache/store.js";
-import { getProjectUserProperties, updateProjectUserProperties } from "../cache/user-properties.js";
-import { buildProjectIssuesResponse, matchWorkspace, requireCache } from "./helpers.js";
+import type { CacheBackend } from "../cache/backend.js";
 import { createBootstrapContext, BFF_VIEWER_USER_ID } from "../bootstrap/session.js";
 import {
   EMPTY_ISSUE_META,
@@ -9,14 +7,15 @@ import {
   EMPTY_NOTIFICATION_PAGE,
   HOME_WIDGETS,
 } from "../defaults/empty-responses.js";
+import { buildProjectIssuesResponse, getCache, matchWorkspace, requireCache } from "./helpers.js";
 
 function workspaceGuard(c: Parameters<typeof matchWorkspace>[0], slug: string) {
   if (!matchWorkspace(c, slug)) return c.json({ error: "Not found" }, 404);
   return null;
 }
 
-function projectMembers(_projectId: string) {
-  const users = [...cacheStore.cache.users.values()];
+function projectMembers(cache: CacheBackend, _projectId: string) {
+  const users = [...cache.cache.users.values()];
   if (users.length === 0) {
     return [
       {
@@ -59,82 +58,84 @@ export function createStubRoutes() {
     return c.json(HOME_WIDGETS);
   });
 
-  app.get("/api/workspaces/:slug/issues/", (c) => {
+  app.get("/api/workspaces/:slug/issues/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));
     if (blocked) return blocked;
-    const cacheBlocked = requireCache(c);
+    const cacheBlocked = await requireCache(c);
     if (cacheBlocked) return cacheBlocked;
     const query = c.req.query();
-    const issues = cacheStore.getWorkspaceIssues(query);
+    const issues = getCache(c).getWorkspaceIssues(query);
     return c.json(buildProjectIssuesResponse(issues, query));
   });
 
-  app.get("/api/workspaces/:slug/issues-detail/", (c) => {
+  app.get("/api/workspaces/:slug/issues-detail/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));
     if (blocked) return blocked;
-    const cacheBlocked = requireCache(c);
+    const cacheBlocked = await requireCache(c);
     if (cacheBlocked) return cacheBlocked;
     const query = c.req.query();
-    const issues = cacheStore.getWorkspaceIssues(query);
+    const issues = getCache(c).getWorkspaceIssues(query);
     return c.json(buildProjectIssuesResponse(issues, query));
   });
 
-  app.get("/api/workspaces/:slug/user-issues/:userId/", (c) => {
+  app.get("/api/workspaces/:slug/user-issues/:userId/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));
     if (blocked) return blocked;
-    const cacheBlocked = requireCache(c);
+    const cacheBlocked = await requireCache(c);
     if (cacheBlocked) return cacheBlocked;
     const query = c.req.query();
-    const issues = cacheStore.getUserIssues(c.req.param("userId"), query);
+    const issues = getCache(c).getUserIssues(c.req.param("userId"), query);
     return c.json(buildProjectIssuesResponse(issues, query));
   });
 
-  app.get("/api/workspaces/:slug/user-stats/:userId/", (c) => {
+  app.get("/api/workspaces/:slug/user-stats/:userId/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));
     if (blocked) return blocked;
+    const allIssues = getCache(c).getAllIssues();
     return c.json({
-      assigned_issues: cacheStore.getAllIssues().length,
+      assigned_issues: allIssues.length,
       completed_issues: 0,
-      created_issues: cacheStore.getAllIssues().length,
-      pending_issues: cacheStore.getAllIssues().length,
+      created_issues: allIssues.length,
+      pending_issues: allIssues.length,
       priority_distribution: [],
       state_distribution: [],
     });
   });
 
-  app.get("/api/workspaces/:slug/user-profile/:userId/", (c) => {
+  app.get("/api/workspaces/:slug/user-profile/:userId/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));
     if (blocked) return blocked;
+    const cache = getCache(c);
     return c.json({
-      project_data: cacheStore.cache.projects.map((project) => ({
+      project_data: cache.cache.projects.map((project) => ({
         id: project.id,
         name: project.name,
         identifier: project.identifier,
-        assigned_issues: cacheStore.getProjectIssues(project.id).length,
+        assigned_issues: cache.getProjectIssues(project.id).length,
         completed_issues: 0,
-        created_issues: cacheStore.getProjectIssues(project.id).length,
-        pending_issues: cacheStore.getProjectIssues(project.id).length,
+        created_issues: cache.getProjectIssues(project.id).length,
+        pending_issues: cache.getProjectIssues(project.id).length,
       })),
     });
   });
 
-  app.get("/api/workspaces/:slug/projects/:projectId/user-properties/", (c) => {
+  app.get("/api/workspaces/:slug/projects/:projectId/user-properties/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));
     if (blocked) return blocked;
-    return c.json(getProjectUserProperties(c.req.param("projectId")));
+    return c.json(await getCache(c).getProjectUserProperties(c.req.param("projectId")));
   });
 
   app.patch("/api/workspaces/:slug/projects/:projectId/user-properties/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));
     if (blocked) return blocked;
     const body = await c.req.json();
-    return c.json(updateProjectUserProperties(c.req.param("projectId"), body));
+    return c.json(await getCache(c).updateProjectUserProperties(c.req.param("projectId"), body));
   });
 
-  app.get("/api/workspaces/:slug/projects/:projectId/members/", (c) => {
+  app.get("/api/workspaces/:slug/projects/:projectId/members/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));
     if (blocked) return blocked;
-    return c.json(projectMembers(c.req.param("projectId")));
+    return c.json(projectMembers(getCache(c), c.req.param("projectId")));
   });
 
   app.get("/api/workspaces/:slug/projects/:projectId/project-members/me/", (c) => {
@@ -161,16 +162,16 @@ export function createStubRoutes() {
   app.get("/api/workspaces/:slug/projects/:projectId/estimates/", (c) => c.json([]));
   app.get("/api/workspaces/:slug/projects/:projectId/intake-state/", (c) => c.json(null));
 
-  app.get("/api/workspaces/:slug/projects/:projectId/issues/:issueId/history/", (c) => {
+  app.get("/api/workspaces/:slug/projects/:projectId/issues/:issueId/history/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));
     if (blocked) return blocked;
-    const cacheBlocked = requireCache(c);
+    const cacheBlocked = await requireCache(c);
     if (cacheBlocked) return cacheBlocked;
 
     const activityType = c.req.query("activity_type");
     if (activityType === "issue-property") return c.json([]);
 
-    const comments = cacheStore.getIssueComments(
+    const comments = getCache(c).getIssueComments(
       c.req.param("projectId"),
       c.req.param("issueId"),
       c.req.query("created_at__gt")
@@ -178,14 +179,14 @@ export function createStubRoutes() {
     return c.json(comments);
   });
 
-  app.get("/api/workspaces/:slug/projects/:projectId/issues/:issueId/comments/", (c) => {
+  app.get("/api/workspaces/:slug/projects/:projectId/issues/:issueId/comments/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));
     if (blocked) return blocked;
-    const cacheBlocked = requireCache(c);
+    const cacheBlocked = await requireCache(c);
     if (cacheBlocked) return cacheBlocked;
 
     return c.json(
-      cacheStore.getIssueComments(c.req.param("projectId"), c.req.param("issueId"), c.req.query("created_at__gt"))
+      getCache(c).getIssueComments(c.req.param("projectId"), c.req.param("issueId"), c.req.query("created_at__gt"))
     );
   });
   app.get("/api/workspaces/:slug/projects/:projectId/issues/:issueId/issue-links/", (c) => c.json([]));
@@ -194,12 +195,12 @@ export function createStubRoutes() {
   app.get("/api/workspaces/:slug/projects/:projectId/issues/:issueId/subscribe/", (c) => c.json({ subscribed: false }));
   app.get("/api/workspaces/:slug/projects/:projectId/issues/:issueId/meta/", (c) => c.json(EMPTY_ISSUE_META));
 
-  app.get("/api/workspaces/:slug/work-items/:identifier/", (c) => {
+  app.get("/api/workspaces/:slug/work-items/:identifier/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));
     if (blocked) return blocked;
-    const cacheBlocked = requireCache(c);
+    const cacheBlocked = await requireCache(c);
     if (cacheBlocked) return cacheBlocked;
-    const found = cacheStore.findIssueByIdentifier(c.req.param("identifier"));
+    const found = getCache(c).findIssueByIdentifier(c.req.param("identifier"));
     if (!found) return c.json({ error: "Not found" }, 404);
     return c.json(found.issue);
   });

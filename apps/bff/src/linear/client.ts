@@ -386,7 +386,7 @@ function parseLinearProjects(
     return {
       id: project.id,
       name: project.name,
-      description: project.description,
+      description: project.description ?? null,
       slugId: project.slugId,
       teamIds: teams.map((team) => team.id),
       primaryTeamId: primaryTeam?.id ?? "",

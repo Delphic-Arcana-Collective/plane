@@ -1,5 +1,5 @@
 import type { Env } from "../src/env.js";
-import { cacheStore } from "../src/cache/store.js";
+import { MemoryCacheBackend } from "../src/cache/store.js";
 import { mapIssue, mapLabel, mapLinearProject, mapState, mapWorkspace } from "../src/mapper/index.js";
 import { BFF_VIEWER_USER_ID } from "../src/bootstrap/session.js";
 import type { LinearSyncSnapshot } from "../src/linear/client.js";
@@ -16,10 +16,15 @@ export function createTestEnv(overrides: Partial<Env> = {}): Env {
     PLANE_WORKSPACE_NAME: "Delphic Arcana Collective",
     MOCK_USER_EMAIL: "dev@linear.local",
     MOCK_USER_NAME: "Linear Viewer",
+    WEB_APP_BASE_URL: "http://localhost:3000",
     LINEAR_API_KEY: undefined,
     LINEAR_WORKSPACE_ID: undefined,
+    LINEAR_WEBHOOK_SECRET: undefined,
     CACHE_POLL_INTERVAL_MS: 60_000,
     CACHE_INITIAL_FETCH: false,
+    SYNC_DEBOUNCE_MS: 30_000,
+    SYNC_MIN_INTERVAL_MS: 30_000,
+    SYNC_ON_CACHE_MISS: true,
     ...overrides,
   };
 }
@@ -131,19 +136,22 @@ export function createTestSnapshot(): LinearSyncSnapshot {
   };
 }
 
-export function seedTestCache(env: Env = createTestEnv()) {
-  cacheStore.reset();
-  cacheStore.applySnapshot(createTestSnapshot(), env);
-  return cacheStore.cache;
+export async function seedTestCache(cache: MemoryCacheBackend, env: Env = createTestEnv()) {
+  await cache.reset();
+  await cache.applySnapshot(createTestSnapshot(), env);
+  return cache.cache;
 }
 
-export function createTestApp(env: Env = createTestEnv()) {
-  seedTestCache(env);
-  return createServer(env);
+export async function createSeededTestApp(env: Env = createTestEnv()) {
+  const cache = new MemoryCacheBackend();
+  await seedTestCache(cache, env);
+  return createServer(env, cache);
 }
+
+export const createReadyTestApp = createSeededTestApp;
 
 export async function getJson<T>(
-  app: ReturnType<typeof createTestApp>,
+  app: Awaited<ReturnType<typeof createSeededTestApp>>,
   path: string
 ): Promise<{ status: number; body: T }> {
   const response = await app.request(path);

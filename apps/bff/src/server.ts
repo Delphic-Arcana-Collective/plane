@@ -2,6 +2,8 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import type { CacheBackend } from "./cache/backend.js";
+import { MemoryCacheBackend } from "./cache/store.js";
 import type { Env } from "./env.js";
 import { startWorker } from "./linear/worker.js";
 import { createRoutes } from "./routes/index.js";
@@ -9,10 +11,11 @@ import { createRoutes } from "./routes/index.js";
 declare module "hono" {
   interface ContextVariableMap {
     env: Env;
+    cache: CacheBackend;
   }
 }
 
-export function createServer(env: Env) {
+export function createServer(env: Env, cacheBackend: CacheBackend) {
   const app = new Hono();
 
   app.use("*", logger());
@@ -25,6 +28,8 @@ export function createServer(env: Env) {
   );
   app.use("*", async (c, next) => {
     c.set("env", env);
+    c.set("cache", cacheBackend);
+    await cacheBackend.ensureLoaded();
     await next();
   });
 
@@ -34,9 +39,10 @@ export function createServer(env: Env) {
 }
 
 export function startServer(env: Env) {
-  const app = createServer(env);
+  const cache = new MemoryCacheBackend();
+  const app = createServer(env, cache);
 
-  startWorker(env);
+  startWorker(env, cache);
 
   serve(
     {
