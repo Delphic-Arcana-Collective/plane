@@ -37,22 +37,28 @@ jobs:
       - name: Typecheck BFF
         run: pnpm turbo run check:types --filter=bff --filter=@plane/types
 
-      # API token needs: Workers Scripts Edit, Workers KV Storage Edit, Account Settings Read
-      - name: Deploy Worker and sync secrets
-        uses: cloudflare/wrangler-action@v4
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: apps/bff
-          command: deploy
-          secrets: |
-            LINEAR_API_KEY
-            LINEAR_WEBHOOK_SECRET
-            LINEAR_WORKSPACE_ID
+      # Use wrangler from apps/bff (not workspace root). Token needs Workers Scripts Edit + User Memberships Read.
+      - name: Deploy Worker
+        working-directory: apps/bff
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm exec wrangler deploy
+
+      - name: Sync Worker secrets
+        working-directory: apps/bff
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           LINEAR_WEBHOOK_SECRET: ${{ secrets.LINEAR_WEBHOOK_SECRET }}
           LINEAR_WORKSPACE_ID: ${{ secrets.LINEAR_WORKSPACE_ID }}
+        run: |
+          printf '%s' "$LINEAR_API_KEY" | pnpm exec wrangler secret put LINEAR_API_KEY
+          printf '%s' "$LINEAR_WEBHOOK_SECRET" | pnpm exec wrangler secret put LINEAR_WEBHOOK_SECRET
+          if [ -n "$LINEAR_WORKSPACE_ID" ]; then
+            printf '%s' "$LINEAR_WORKSPACE_ID" | pnpm exec wrangler secret put LINEAR_WORKSPACE_ID
+          fi
 
       - name: Smoke test health
         run: curl -sfS "https://linear.delphic.studio/health" | head -c 500
