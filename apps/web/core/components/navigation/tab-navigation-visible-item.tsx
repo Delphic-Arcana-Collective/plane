@@ -39,6 +39,21 @@ export function TabNavigationVisibleItem({
   const { t } = useTranslation();
   const isDefault = item.key === tabPreferences.defaultTab;
 
+  if (item.isDisabled) {
+    return (
+      <div className="relative flex h-full items-center">
+        <div key={`${item.key}-measure`} ref={itemRef}>
+          <TabNavigationItem
+            isActive={false}
+            className="pointer-events-none cursor-not-allowed text-tertiary opacity-60"
+          >
+            <span>{t(item.i18n_key)}</span>
+          </TabNavigationItem>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex h-full items-center transition-all duration-300">
       {isActive && (

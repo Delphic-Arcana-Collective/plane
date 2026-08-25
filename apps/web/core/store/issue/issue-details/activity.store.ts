@@ -8,7 +8,7 @@ import { concat, orderBy, set, uniq, update } from "lodash-es";
 import { action, makeObservable, observable, runInAction } from "mobx";
 import { computedFn } from "mobx-utils";
 // plane package imports
-import type { E_SORT_ORDER } from "@plane/constants";
+import { E_SORT_ORDER } from "@plane/constants";
 import { EActivityFilterType } from "@plane/constants";
 import type {
   TIssueActivityComment,
@@ -20,6 +20,7 @@ import type {
 import { EIssueServiceType } from "@plane/types";
 // services
 import { IssueActivityService } from "@/services/issue";
+import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // store
 import type { CoreRootStore } from "@/store/root.store";
 
@@ -127,14 +128,38 @@ export class IssueActivityStore implements IIssueActivityStore {
     return activityComments;
   }
 
-  protected sortActivityComments(items: TIssueActivityComment[], sortOrder: E_SORT_ORDER): TIssueActivityComment[] {
+  protected sortActivityComments(
+    items: TIssueActivityComment[],
+    sortOrder: E_SORT_ORDER,
+    issueId?: string
+  ): TIssueActivityComment[] {
+    if (isLinearDisplayMode() && issueId) {
+      const currentStore =
+        this.serviceType === EIssueServiceType.EPICS ? this.store.issue.epicDetail : this.store.issue.issueDetail;
+      const commentIds = currentStore.comment.getCommentsByIssueId(issueId) ?? [];
+      const orderedCommentIds = sortOrder === E_SORT_ORDER.ASC ? commentIds : [...commentIds].toReversed();
+      const itemById = new Map(items.map((item) => [item.id, item]));
+
+      const comments = orderedCommentIds
+        .map((id) => itemById.get(id))
+        .filter((item): item is TIssueActivityComment => !!item && item.activity_type === EActivityFilterType.COMMENT);
+
+      const activities = orderBy(
+        items.filter((item) => item.activity_type !== EActivityFilterType.COMMENT),
+        (item) => new Date(item.created_at || 0),
+        sortOrder
+      );
+
+      return [...activities, ...comments];
+    }
+
     return orderBy(items, (e) => new Date(e.created_at || 0), sortOrder);
   }
 
   getActivityAndCommentsByIssueId = computedFn((issueId: string, sortOrder: E_SORT_ORDER) => {
     const baseItems = this.buildActivityAndCommentItems(issueId);
     if (!baseItems) return undefined;
-    return this.sortActivityComments(baseItems, sortOrder);
+    return this.sortActivityComments(baseItems, sortOrder, issueId);
   });
 
   // actions

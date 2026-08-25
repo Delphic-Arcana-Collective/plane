@@ -7,7 +7,6 @@
 import { isEmpty, set } from "lodash-es";
 import { action, computed, makeObservable, observable, runInAction } from "mobx";
 // base class
-import { computedFn } from "mobx-utils";
 import type { TSupportedFilterTypeForUpdate } from "@plane/constants";
 import { EIssueFilterType } from "@plane/constants";
 import type {
@@ -28,6 +27,7 @@ import { IssueFilterHelperStore } from "../helpers/issue-filter-helper.store";
 // types
 import type { IIssueRootStore } from "../root.store";
 import { ProjectService } from "@/services/project";
+import { getLinearDefaultDisplayFilters, isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // constants
 // services
 
@@ -120,25 +120,38 @@ export class ProjectIssuesFilter extends IssueFilterHelperStore implements IProj
     return filteredRouteParams;
   }
 
-  getFilterParams = computedFn(
-    (
-      options: IssuePaginationOptions,
-      projectId: string,
-      cursor: string | undefined,
-      groupId: string | undefined,
-      subGroupId: string | undefined
-    ) => {
-      const filterParams = this.getAppliedFilters(projectId);
-      const paginationParams = this.getPaginationParams(filterParams, options, cursor, groupId, subGroupId);
-      return paginationParams;
-    }
-  );
+  getFilterParams = (
+    options: IssuePaginationOptions,
+    projectId: string,
+    cursor: string | undefined,
+    groupId: string | undefined,
+    subGroupId: string | undefined
+  ) => {
+    const filterParams = this.getAppliedFilters(projectId);
+    return this.getPaginationParams(filterParams, options, cursor, groupId, subGroupId);
+  };
 
   fetchFilters = async (workspaceSlug: string, projectId: string) => {
     const _filters = await this.projectService.getProjectUserProperties(workspaceSlug, projectId);
 
     const richFilters = _filters?.rich_filters;
-    const displayFilters = this.computedDisplayFilters(_filters?.display_filters);
+    const serverDisplayFilters = _filters?.display_filters ?? {};
+    const displayFilters = this.computedDisplayFilters(
+      isLinearDisplayMode()
+        ? {
+            ...getLinearDefaultDisplayFilters(),
+            ...serverDisplayFilters,
+            calendar: {
+              ...getLinearDefaultDisplayFilters().calendar,
+              ...serverDisplayFilters?.calendar,
+            },
+            group_by:
+              serverDisplayFilters && "group_by" in serverDisplayFilters
+                ? serverDisplayFilters.group_by
+                : getLinearDefaultDisplayFilters().group_by,
+          }
+        : serverDisplayFilters
+    );
     const displayProperties = this.computedDisplayProperties(_filters?.display_properties);
 
     // fetching the kanban toggle helpers in the local storage
@@ -220,8 +233,11 @@ export class ProjectIssuesFilter extends IssueFilterHelperStore implements IProj
             _filters.displayFilters.sub_group_by = null;
             updatedDisplayFilters.sub_group_by = null;
           }
-          // set group_by to state if layout is switched to kanban and group_by is null
-          if (_filters.displayFilters.layout === "kanban" && _filters.displayFilters.group_by === null) {
+          // set group_by to state if layout is switched to kanban/list and group_by is null
+          if (
+            (_filters.displayFilters.layout === "kanban" || _filters.displayFilters.layout === "list") &&
+            _filters.displayFilters.group_by === null
+          ) {
             _filters.displayFilters.group_by = "state";
             updatedDisplayFilters.group_by = "state";
           }

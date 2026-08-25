@@ -42,6 +42,7 @@ import { IssueCycleSelect } from "./cycle-select";
 import { IssueLabel } from "./label";
 import { IssueModuleSelect } from "./module-select";
 import type { TIssueOperations } from "./root";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 
 type Props = {
   workspaceSlug: string;
@@ -82,7 +83,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
       <div className="flex h-full w-full flex-col items-center divide-y-2 divide-subtle-1 overflow-hidden">
         <div className="h-full w-full overflow-y-auto px-6">
           <h5 className="mt-5 text-body-xs-medium">{t("common.properties")}</h5>
-          <div className={`mt-4 mb-2 space-y-2.5 truncate ${!isEditable ? "opacity-60" : ""}`}>
+          <div className="mt-4 mb-2 space-y-2.5 truncate">
             <SidebarPropertyListItem icon={StatePropertyIcon} label={t("common.state")}>
               <StateDropdown
                 value={issue?.state_id}
@@ -137,50 +138,55 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
               </SidebarPropertyListItem>
             )}
 
-            <SidebarPropertyListItem icon={StartDatePropertyIcon} label={t("common.order_by.start_date")}>
-              <DateDropdown
-                placeholder={t("issue.add.start_date")}
-                value={issue.start_date}
-                onChange={(val) =>
-                  issueOperations.update(workspaceSlug, projectId, issueId, {
-                    start_date: val ? renderFormattedPayloadDate(val) : null,
-                  })
-                }
-                maxDate={maxDate ?? undefined}
-                disabled={!isEditable}
-                buttonVariant="transparent-with-text"
-                className="group w-full grow"
-                buttonContainerClassName="w-full text-left h-7.5"
-                buttonClassName={`text-body-xs-regular ${issue?.start_date ? "" : "text-placeholder"}`}
-                hideIcon
-                clearIconClassName="h-3 w-3 hidden group-hover:inline"
-              />
-            </SidebarPropertyListItem>
+            {/* TODO(linear-display): Re-enable start/due date when write support is added. */}
+            {!isLinearReadOnly() && (
+              <>
+                <SidebarPropertyListItem icon={StartDatePropertyIcon} label={t("common.order_by.start_date")}>
+                  <DateDropdown
+                    placeholder={t("issue.add.start_date")}
+                    value={issue.start_date}
+                    onChange={(val) =>
+                      issueOperations.update(workspaceSlug, projectId, issueId, {
+                        start_date: val ? renderFormattedPayloadDate(val) : null,
+                      })
+                    }
+                    maxDate={maxDate ?? undefined}
+                    disabled={!isEditable}
+                    buttonVariant="transparent-with-text"
+                    className="group w-full grow"
+                    buttonContainerClassName="w-full text-left h-7.5"
+                    buttonClassName={`text-body-xs-regular ${issue?.start_date ? "" : "text-placeholder"}`}
+                    hideIcon
+                    clearIconClassName="h-3 w-3 hidden group-hover:inline"
+                  />
+                </SidebarPropertyListItem>
 
-            <SidebarPropertyListItem icon={DueDatePropertyIcon} label={t("common.order_by.due_date")}>
-              <div className="flex w-full items-center gap-2">
-                <DateDropdown
-                  placeholder={t("issue.add.due_date")}
-                  value={issue.target_date}
-                  onChange={(val) =>
-                    issueOperations.update(workspaceSlug, projectId, issueId, {
-                      target_date: val ? renderFormattedPayloadDate(val) : null,
-                    })
-                  }
-                  minDate={minDate ?? undefined}
-                  disabled={!isEditable}
-                  buttonVariant="transparent-with-text"
-                  className="group w-full grow"
-                  buttonContainerClassName="w-full text-left h-7.5"
-                  buttonClassName={cn("text-body-xs-regular", {
-                    "text-placeholder": !issue.target_date,
-                    "text-danger-primary": shouldHighlightIssueDueDate(issue.target_date, stateDetails?.group),
-                  })}
-                  hideIcon
-                  clearIconClassName="h-3 w-3 hidden group-hover:inline text-primary"
-                />
-              </div>
-            </SidebarPropertyListItem>
+                <SidebarPropertyListItem icon={DueDatePropertyIcon} label={t("common.order_by.due_date")}>
+                  <div className="flex w-full items-center gap-2">
+                    <DateDropdown
+                      placeholder={t("issue.add.due_date")}
+                      value={issue.target_date}
+                      onChange={(val) =>
+                        issueOperations.update(workspaceSlug, projectId, issueId, {
+                          target_date: val ? renderFormattedPayloadDate(val) : null,
+                        })
+                      }
+                      minDate={minDate ?? undefined}
+                      disabled={!isEditable}
+                      buttonVariant="transparent-with-text"
+                      className="group w-full grow"
+                      buttonContainerClassName="w-full text-left h-7.5"
+                      buttonClassName={cn("text-body-xs-regular", {
+                        "text-placeholder": !issue.target_date,
+                        "text-danger-primary": shouldHighlightIssueDueDate(issue.target_date, stateDetails?.group),
+                      })}
+                      hideIcon
+                      clearIconClassName="h-3 w-3 hidden group-hover:inline text-primary"
+                    />
+                  </div>
+                </SidebarPropertyListItem>
+              </>
+            )}
 
             {projectId && areEstimateEnabledByProjectId(projectId) && (
               <SidebarPropertyListItem icon={EstimatePropertyIcon} label={t("common.estimate")}>

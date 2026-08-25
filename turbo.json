@@ -28,7 +28,9 @@
     "VITE_SUPPORT_EMAIL",
     "VITE_WEB_BASE_PATH",
     "VITE_WEB_BASE_URL",
-    "VITE_WEBSITE_URL"
+    "VITE_WEBSITE_URL",
+    "VITE_LINEAR_DISPLAY_MODE",
+    "VITE_LINEAR_WORKSPACE_SLUG"
   ],
   "remoteCache": {
     "enabled": false

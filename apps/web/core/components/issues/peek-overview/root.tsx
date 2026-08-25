@@ -20,6 +20,7 @@ import { useIssues } from "@/hooks/store/use-issues";
 import { useUserPermissions } from "@/hooks/store/user";
 import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
 import { useWorkItemProperties } from "@/hooks/use-issue-properties";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 // local imports
 import type { TIssueOperations } from "../issue-detail";
 import { IssueView } from "./view";
@@ -65,14 +66,15 @@ export const IssuePeekOverview = observer(function IssuePeekOverview(props: IWor
   }, [embedIssue, embedRemoveCurrentNotification, setPeekIssue]);
 
   const issueOperations: TIssueOperations = useMemo(
+    // oxlint-disable eslint/no-shadow -- callback params mirror TIssueOperations signatures
     () => ({
       fetch: async (workspaceSlug: string, projectId: string, issueId: string) => {
         try {
           setError(false);
           await fetchIssue(workspaceSlug, projectId, issueId);
-        } catch (error) {
+        } catch (fetchError) {
           setError(true);
-          console.error("Error fetching the parent issue", error);
+          console.error("Error fetching the parent issue", fetchError);
         }
       },
       update: async (workspaceSlug: string, projectId: string, issueId: string, data: Partial<TIssue>) => {
@@ -110,8 +112,8 @@ export const IssuePeekOverview = observer(function IssuePeekOverview(props: IWor
         try {
           if (!issues?.archiveIssue) return;
           await issues.archiveIssue(workspaceSlug, projectId, issueId);
-        } catch (error) {
-          console.error("Error archiving the issue", error);
+        } catch (archiveError) {
+          console.error("Error archiving the issue", archiveError);
         }
       },
       restore: async (workspaceSlug: string, projectId: string, issueId: string) => {
@@ -169,8 +171,8 @@ export const IssuePeekOverview = observer(function IssuePeekOverview(props: IWor
           });
           await removeFromCyclePromise;
           fetchActivities(workspaceSlug, projectId, issueId);
-        } catch (error) {
-          console.error("Error removing issue from cycle", error);
+        } catch (removeCycleError) {
+          console.error("Error removing issue from cycle", removeCycleError);
         }
       },
       changeModulesInIssue: async (
@@ -206,11 +208,12 @@ export const IssuePeekOverview = observer(function IssuePeekOverview(props: IWor
           });
           await removeFromModulePromise;
           fetchActivities(workspaceSlug, projectId, issueId);
-        } catch (error) {
-          console.error("Error removing issue from module", error);
+        } catch (removeModuleError) {
+          console.error("Error removing issue from module", removeModuleError);
         }
       },
     }),
+    // oxlint-enable eslint/no-shadow
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [fetchIssue, is_draft, issues, fetchActivities, pathname, removeRoutePeekId, restoreIssue]
   );
@@ -228,12 +231,14 @@ export const IssuePeekOverview = observer(function IssuePeekOverview(props: IWor
   if (!peekIssue?.workspaceSlug || !peekIssue?.projectId || !peekIssue?.issueId) return <></>;
 
   // Check if issue is editable, based on user role
-  const isEditable = allowPermissions(
-    [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
-    EUserPermissionsLevel.PROJECT,
-    peekIssue?.workspaceSlug,
-    peekIssue?.projectId
-  );
+  const isEditable =
+    !isLinearReadOnly() &&
+    allowPermissions(
+      [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
+      EUserPermissionsLevel.PROJECT,
+      peekIssue?.workspaceSlug,
+      peekIssue?.projectId
+    );
 
   return (
     <IssueView

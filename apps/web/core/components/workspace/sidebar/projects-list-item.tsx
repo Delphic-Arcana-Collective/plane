@@ -26,6 +26,7 @@ import { IconButton } from "@plane/propel/icon-button";
 import { Tooltip } from "@plane/propel/tooltip";
 import { CustomMenu, DropIndicator, DragHandle, ControlLink } from "@plane/ui";
 import { cn } from "@plane/utils";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 // components
 import { DEFAULT_TAB_KEY, getTabUrl } from "@/components/navigation/tab-navigation-utils";
 import { useTabPreferences } from "@/components/navigation/use-tab-preferences";
@@ -353,32 +354,34 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
                 )}
               </ControlLink>
               <div className="flex items-center gap-1">
-                <CustomMenu
-                  customButton={
-                    <IconButton
-                      ref={actionSectionRef}
-                      variant="ghost"
-                      size="sm"
-                      icon={MoreHorizontal}
-                      onClick={() => setIsMenuActive(!isMenuActive)}
-                      className="text-placeholder"
-                    />
-                  }
-                  className={cn(
-                    "pointer-events-none flex-shrink-0 opacity-0 group-hover/project-item:pointer-events-auto group-hover/project-item:opacity-100",
-                    {
-                      "pointer-events-auto opacity-100": isMenuActive,
+                {/* TODO(linear-display): Re-enable project quick actions (publish, copy link, settings, etc.) when write support is added. */}
+                {!isLinearReadOnly() && (
+                  <CustomMenu
+                    customButton={
+                      <IconButton
+                        ref={actionSectionRef}
+                        variant="ghost"
+                        size="sm"
+                        icon={MoreHorizontal}
+                        onClick={() => setIsMenuActive(!isMenuActive)}
+                        className="text-placeholder"
+                      />
                     }
-                  )}
-                  customButtonClassName="grid place-items-center"
-                  placement="bottom-start"
-                  ariaLabel={t("aria_labels.projects_sidebar.toggle_quick_actions_menu")}
-                  useCaptureForOutsideClick
-                  closeOnSelect
-                  onMenuClose={() => setIsMenuActive(false)}
-                >
-                  {/* TODO: Removed is_favorite logic due to the optimization in projects API */}
-                  {/* {isAuthorized && (
+                    className={cn(
+                      "pointer-events-none flex-shrink-0 opacity-0 group-hover/project-item:pointer-events-auto group-hover/project-item:opacity-100",
+                      {
+                        "pointer-events-auto opacity-100": isMenuActive,
+                      }
+                    )}
+                    customButtonClassName="grid place-items-center"
+                    placement="bottom-start"
+                    ariaLabel={t("aria_labels.projects_sidebar.toggle_quick_actions_menu")}
+                    useCaptureForOutsideClick
+                    closeOnSelect
+                    onMenuClose={() => setIsMenuActive(false)}
+                  >
+                    {/* TODO: Removed is_favorite logic due to the optimization in projects API */}
+                    {/* {isAuthorized && (
                     <CustomMenu.MenuItem
                       onClick={project.is_favorite ? handleRemoveFromFavorites : handleAddToFavorites}
                     >
@@ -393,55 +396,56 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
                     </CustomMenu.MenuItem>
                   )} */}
 
-                  {/* publish project settings */}
-                  {isAdmin && (
-                    <CustomMenu.MenuItem onClick={() => setPublishModal(true)}>
-                      <div className="relative flex flex-shrink-0 items-center justify-start gap-2">
-                        <div className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-sm text-secondary transition-all duration-300 hover:bg-layer-1">
-                          <Share2 className="h-3.5 w-3.5 stroke-[1.5]" />
+                    {/* publish project settings */}
+                    {isAdmin && (
+                      <CustomMenu.MenuItem onClick={() => setPublishModal(true)}>
+                        <div className="relative flex flex-shrink-0 items-center justify-start gap-2">
+                          <div className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-sm text-secondary transition-all duration-300 hover:bg-layer-1">
+                            <Share2 className="h-3.5 w-3.5 stroke-[1.5]" />
+                          </div>
+                          <div>{t("publish_project")}</div>
                         </div>
-                        <div>{t("publish_project")}</div>
-                      </div>
+                      </CustomMenu.MenuItem>
+                    )}
+                    <CustomMenu.MenuItem onClick={handleCopyText}>
+                      <span className="flex items-center justify-start gap-2">
+                        <LinkIcon className="h-3.5 w-3.5 stroke-[1.5]" />
+                        <span>{t("copy_link")}</span>
+                      </span>
                     </CustomMenu.MenuItem>
-                  )}
-                  <CustomMenu.MenuItem onClick={handleCopyText}>
-                    <span className="flex items-center justify-start gap-2">
-                      <LinkIcon className="h-3.5 w-3.5 stroke-[1.5]" />
-                      <span>{t("copy_link")}</span>
-                    </span>
-                  </CustomMenu.MenuItem>
-                  {isAuthorized && (
+                    {isAuthorized && (
+                      <CustomMenu.MenuItem
+                        onClick={() => {
+                          router.push(`/${workspaceSlug}/projects/${project?.id}/archives/issues`);
+                        }}
+                      >
+                        <div className="flex cursor-pointer items-center justify-start gap-2">
+                          <ArchiveIcon className="h-3.5 w-3.5 stroke-[1.5]" />
+                          <span>{t("archives")}</span>
+                        </div>
+                      </CustomMenu.MenuItem>
+                    )}
                     <CustomMenu.MenuItem
                       onClick={() => {
-                        router.push(`/${workspaceSlug}/projects/${project?.id}/archives/issues`);
+                        router.push(`/${workspaceSlug}/settings/projects/${project?.id}`);
                       }}
                     >
                       <div className="flex cursor-pointer items-center justify-start gap-2">
-                        <ArchiveIcon className="h-3.5 w-3.5 stroke-[1.5]" />
-                        <span>{t("archives")}</span>
+                        <Settings className="h-3.5 w-3.5 stroke-[1.5]" />
+                        <span>{t("settings")}</span>
                       </div>
                     </CustomMenu.MenuItem>
-                  )}
-                  <CustomMenu.MenuItem
-                    onClick={() => {
-                      router.push(`/${workspaceSlug}/settings/projects/${project?.id}`);
-                    }}
-                  >
-                    <div className="flex cursor-pointer items-center justify-start gap-2">
-                      <Settings className="h-3.5 w-3.5 stroke-[1.5]" />
-                      <span>{t("settings")}</span>
-                    </div>
-                  </CustomMenu.MenuItem>
-                  {/* leave project */}
-                  {!isAuthorized && (
-                    <CustomMenu.MenuItem onClick={handleLeaveProject}>
-                      <div className="flex items-center justify-start gap-2">
-                        <LogOut className="h-3.5 w-3.5 stroke-[1.5]" />
-                        <span>{t("leave_project")}</span>
-                      </div>
-                    </CustomMenu.MenuItem>
-                  )}
-                </CustomMenu>
+                    {/* leave project */}
+                    {!isAuthorized && (
+                      <CustomMenu.MenuItem onClick={handleLeaveProject}>
+                        <div className="flex items-center justify-start gap-2">
+                          <LogOut className="h-3.5 w-3.5 stroke-[1.5]" />
+                          <span>{t("leave_project")}</span>
+                        </div>
+                      </CustomMenu.MenuItem>
+                    )}
+                  </CustomMenu>
+                )}
                 {isAccordionMode && (
                   <IconButton
                     variant="ghost"

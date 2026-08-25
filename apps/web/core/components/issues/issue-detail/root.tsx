@@ -22,6 +22,7 @@ import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
 import { useUserPermissions } from "@/hooks/store/user";
 import { useAppRouter } from "@/hooks/use-app-router";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 // local components
 import { IssuePeekOverview } from "../peek-overview";
 import { IssueMainContent } from "./main-content";
@@ -83,6 +84,7 @@ export const IssueDetailRoot = observer(function IssueDetailRoot(props: TIssueDe
   const { issueDetailSidebarCollapsed } = useAppTheme();
 
   const issueOperations: TIssueOperations = useMemo(
+    // oxlint-disable eslint/no-shadow -- callback params mirror TIssueOperations signatures
     () => ({
       fetch: async (workspaceSlug: string, projectId: string, issueId: string) => {
         try {
@@ -199,6 +201,7 @@ export const IssueDetailRoot = observer(function IssueDetailRoot(props: TIssueDe
         return promise;
       },
     }),
+    // oxlint-enable eslint/no-shadow
     [
       is_archived,
       fetchIssue,
@@ -218,12 +221,14 @@ export const IssueDetailRoot = observer(function IssueDetailRoot(props: TIssueDe
   // issue details
   const issue = getIssueById(issueId);
   // checking if issue is editable, based on user role
-  const isEditable = allowPermissions(
-    [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
-    EUserPermissionsLevel.PROJECT,
-    workspaceSlug,
-    projectId
-  );
+  const isEditable =
+    !isLinearReadOnly() &&
+    allowPermissions(
+      [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
+      EUserPermissionsLevel.PROJECT,
+      workspaceSlug,
+      projectId
+    );
 
   return (
     <>

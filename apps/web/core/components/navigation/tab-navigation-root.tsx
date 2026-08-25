@@ -15,6 +15,7 @@ import type { EUserProjectRoles } from "@plane/types";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
 import { useUserPermissions } from "@/hooks/store/user";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 // local imports
 import { LeaveProjectModal } from "../project/leave-project-modal";
 import { PublishProjectModal } from "../project/publish-project/modal";
@@ -39,6 +40,7 @@ export type TNavigationItem = {
   sortOrder: number;
   i18n_key: string;
   key: string;
+  isDisabled?: boolean;
 };
 
 type TTabNavigationRootProps = {
@@ -178,17 +180,20 @@ export const TabNavigationRoot = observer(function TabNavigationRoot(props: TTab
       <div className="flex size-full items-center gap-3 overflow-hidden">
         <div className="flex shrink-0 items-center gap-2">
           <ProjectHeader workspaceSlug={workspaceSlug} projectId={projectId} />
-          <div className="shrink-0">
-            <ProjectActionsMenu
-              workspaceSlug={workspaceSlug}
-              project={project}
-              isAdmin={isAdmin}
-              isAuthorized={isAuthorized}
-              onCopyText={handleCopyText}
-              onLeaveProject={handleLeaveProject}
-              onPublishModal={() => handlePublishModal(true)}
-            />
-          </div>
+          {/* TODO(linear-display): Re-enable project actions menu (publish, settings, leave, etc.) when write support is added. */}
+          {!isLinearReadOnly() && (
+            <div className="shrink-0">
+              <ProjectActionsMenu
+                workspaceSlug={workspaceSlug}
+                project={project}
+                isAdmin={isAdmin}
+                isAuthorized={isAuthorized}
+                onCopyText={handleCopyText}
+                onLeaveProject={handleLeaveProject}
+                onPublishModal={() => handlePublishModal(true)}
+              />
+            </div>
+          )}
         </div>
 
         <div className="h-5 w-1 shrink-0 border-l border-subtle" />

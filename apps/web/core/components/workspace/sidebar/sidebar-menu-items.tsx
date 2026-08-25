@@ -28,8 +28,11 @@ import {
   useWorkspaceNavigationPreferences,
 } from "@/hooks/use-navigation-preferences";
 import { SidebarItemBase } from "./sidebar-item";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 
 export const SidebarMenuItems = observer(function SidebarMenuItems() {
+  if (isLinearReadOnly()) return null;
+
   // routers
   const { setValue: toggleWorkspaceMenu, storedValue: isWorkspaceMenuOpen } = useLocalStorage<boolean>(
     "is_workspace_menu_open",

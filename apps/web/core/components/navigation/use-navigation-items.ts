@@ -10,6 +10,7 @@ import { EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import { CycleIcon, IntakeIcon, ModuleIcon, PageIcon, ViewsIcon, WorkItemsIcon } from "@plane/propel/icons";
 import type { EUserProjectRoles, IPartialProject } from "@plane/types";
 import type { TNavigationItem } from "@/components/navigation/tab-navigation-root";
+import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
 
 type UseNavigationItemsProps = {
   workspaceSlug: string;
@@ -103,6 +104,9 @@ export const useNavigationItems = ({
 
     // Filter by permissions and shouldRender
     const filteredItems = navItems.filter((item) => {
+      if (isLinearDisplayMode()) {
+        if (item.key !== "work_items" && item.key !== "views") return false;
+      }
       if (!item.shouldRender) return false;
       const hasAccess = allowPermissions(item.access, EUserPermissionsLevel.PROJECT, workspaceSlug, project?.id ?? "");
       return hasAccess;
@@ -110,7 +114,15 @@ export const useNavigationItems = ({
 
     // Sort by sortOrder
     // oxlint-disable-next-line unicorn/no-array-sort
-    return filteredItems.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    return (
+      filteredItems
+        .toSorted((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+        // oxlint-disable-next-line oxc/no-map-spread
+        .map((item) => ({
+          ...item,
+          isDisabled: isLinearDisplayMode() && item.key === "views",
+        }))
+    );
   }, [workspaceSlug, projectId, baseNavigation, allowPermissions, project?.id]);
 
   return navigationItems;

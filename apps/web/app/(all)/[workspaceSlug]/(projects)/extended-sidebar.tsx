@@ -17,8 +17,11 @@ import { useWorkspaceNavigationPreferences } from "@/hooks/use-navigation-prefer
 // components
 import { ExtendedSidebarItem } from "@/components/workspace/sidebar/extended-sidebar-item";
 import { ExtendedSidebarWrapper } from "./extended-sidebar-wrapper";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 
 export const ExtendedAppSidebar = observer(function ExtendedAppSidebar() {
+  if (isLinearReadOnly()) return null;
+
   // refs
   const extendedSidebarRef = useRef<HTMLDivElement | null>(null);
   // routers

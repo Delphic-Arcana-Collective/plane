@@ -42,6 +42,7 @@ import { useProjectState } from "@/hooks/store/use-project-state";
 import { useAppRouter } from "@/hooks/use-app-router";
 import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 // local components
 import { IssuePropertyLabels } from "./labels";
 import { WithDisplayPropertiesHOC } from "./with-display-properties-HOC";
@@ -230,92 +231,97 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       </WithDisplayPropertiesHOC>
 
       {/* merged dates */}
-      <WithDisplayPropertiesHOC
-        displayProperties={displayProperties}
-        displayPropertyKey={["start_date", "due_date"]}
-        shouldRenderProperty={() => isDateRangeEnabled}
-      >
-        {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
-        <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
-          <DateRangeDropdown
-            value={{
-              from: getDate(issue.start_date) || undefined,
-              to: getDate(issue.target_date) || undefined,
-            }}
-            onSelect={(range) => {
-              handleStartDate(range?.from ?? null);
-              handleTargetDate(range?.to ?? null);
-            }}
-            hideIcon={{
-              from: false,
-            }}
-            isClearable
-            mergeDates
-            buttonVariant={issue.start_date || issue.target_date ? "border-with-text" : "border-without-text"}
-            buttonClassName={
-              shouldHighlightIssueDueDate(issue.target_date, stateDetails?.group) ? "text-danger-primary" : ""
-            }
-            clearIconClassName="text-primary!"
-            disabled={isReadOnly}
-            renderByDefault={isMobile}
-            showTooltip
-            renderPlaceholder={false}
-            customTooltipHeading="Date Range"
-          />
-        </div>
-      </WithDisplayPropertiesHOC>
+      {/* TODO(linear-display): Re-enable start/due date when write support is added. */}
+      {!isLinearReadOnly() && (
+        <>
+          <WithDisplayPropertiesHOC
+            displayProperties={displayProperties}
+            displayPropertyKey={["start_date", "due_date"]}
+            shouldRenderProperty={() => isDateRangeEnabled}
+          >
+            {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
+            <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
+              <DateRangeDropdown
+                value={{
+                  from: getDate(issue.start_date) || undefined,
+                  to: getDate(issue.target_date) || undefined,
+                }}
+                onSelect={(range) => {
+                  handleStartDate(range?.from ?? null);
+                  handleTargetDate(range?.to ?? null);
+                }}
+                hideIcon={{
+                  from: false,
+                }}
+                isClearable
+                mergeDates
+                buttonVariant={issue.start_date || issue.target_date ? "border-with-text" : "border-without-text"}
+                buttonClassName={
+                  shouldHighlightIssueDueDate(issue.target_date, stateDetails?.group) ? "text-danger-primary" : ""
+                }
+                clearIconClassName="text-primary!"
+                disabled={isReadOnly}
+                renderByDefault={isMobile}
+                showTooltip
+                renderPlaceholder={false}
+                customTooltipHeading="Date Range"
+              />
+            </div>
+          </WithDisplayPropertiesHOC>
 
-      {/* start date */}
-      <WithDisplayPropertiesHOC
-        displayProperties={displayProperties}
-        displayPropertyKey="start_date"
-        shouldRenderProperty={() => !isDateRangeEnabled}
-      >
-        {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
-        <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
-          <DateDropdown
-            value={issue.start_date ?? null}
-            onChange={handleStartDate}
-            maxDate={maxDate}
-            placeholder={t("common.order_by.start_date")}
-            icon={<StartDatePropertyIcon className="h-3 w-3 flex-shrink-0" />}
-            buttonVariant={issue.start_date ? "border-with-text" : "border-without-text"}
-            optionsClassName="z-10"
-            disabled={isReadOnly}
-            renderByDefault={isMobile}
-            showTooltip
-            labelClassName="text-caption-sm-regular"
-          />
-        </div>
-      </WithDisplayPropertiesHOC>
+          {/* start date */}
+          <WithDisplayPropertiesHOC
+            displayProperties={displayProperties}
+            displayPropertyKey="start_date"
+            shouldRenderProperty={() => !isDateRangeEnabled}
+          >
+            {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
+            <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
+              <DateDropdown
+                value={issue.start_date ?? null}
+                onChange={handleStartDate}
+                maxDate={maxDate}
+                placeholder={t("common.order_by.start_date")}
+                icon={<StartDatePropertyIcon className="h-3 w-3 flex-shrink-0" />}
+                buttonVariant={issue.start_date ? "border-with-text" : "border-without-text"}
+                optionsClassName="z-10"
+                disabled={isReadOnly}
+                renderByDefault={isMobile}
+                showTooltip
+                labelClassName="text-caption-sm-regular"
+              />
+            </div>
+          </WithDisplayPropertiesHOC>
 
-      {/* target/due date */}
-      <WithDisplayPropertiesHOC
-        displayProperties={displayProperties}
-        displayPropertyKey="due_date"
-        shouldRenderProperty={() => !isDateRangeEnabled}
-      >
-        {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
-        <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
-          <DateDropdown
-            value={issue?.target_date ?? null}
-            onChange={handleTargetDate}
-            minDate={minDate}
-            placeholder={t("common.order_by.due_date")}
-            icon={<DueDatePropertyIcon className="h-3 w-3 shrink-0" />}
-            buttonVariant={issue.target_date ? "border-with-text" : "border-without-text"}
-            buttonClassName={
-              shouldHighlightIssueDueDate(issue.target_date, stateDetails?.group) ? "text-danger-primary" : ""
-            }
-            clearIconClassName="text-primary!"
-            optionsClassName="z-10"
-            disabled={isReadOnly}
-            renderByDefault={isMobile}
-            showTooltip
-            labelClassName="text-caption-sm-regular"
-          />
-        </div>
-      </WithDisplayPropertiesHOC>
+          {/* target/due date */}
+          <WithDisplayPropertiesHOC
+            displayProperties={displayProperties}
+            displayPropertyKey="due_date"
+            shouldRenderProperty={() => !isDateRangeEnabled}
+          >
+            {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
+            <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
+              <DateDropdown
+                value={issue?.target_date ?? null}
+                onChange={handleTargetDate}
+                minDate={minDate}
+                placeholder={t("common.order_by.due_date")}
+                icon={<DueDatePropertyIcon className="h-3 w-3 shrink-0" />}
+                buttonVariant={issue.target_date ? "border-with-text" : "border-without-text"}
+                buttonClassName={
+                  shouldHighlightIssueDueDate(issue.target_date, stateDetails?.group) ? "text-danger-primary" : ""
+                }
+                clearIconClassName="text-primary!"
+                optionsClassName="z-10"
+                disabled={isReadOnly}
+                renderByDefault={isMobile}
+                showTooltip
+                labelClassName="text-caption-sm-regular"
+              />
+            </div>
+          </WithDisplayPropertiesHOC>
+        </>
+      )}
 
       {/* assignee */}
       <WithDisplayPropertiesHOC displayProperties={displayProperties} displayPropertyKey="assignee">

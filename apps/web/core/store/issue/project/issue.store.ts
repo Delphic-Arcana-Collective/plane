@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { action, makeObservable, runInAction } from "mobx";
+import { action, computed, makeObservable, runInAction } from "mobx";
 // types
 import type {
   TIssue,
@@ -21,6 +21,7 @@ import { BaseIssuesStore } from "../helpers/base-issues.store";
 // services
 import type { IIssueRootStore } from "../root.store";
 import type { IProjectIssuesFilter } from "./filter.store";
+import { isLinearReadOnly, LINEAR_READ_ONLY_VIEW_FLAGS } from "@/helpers/linear-display.helper";
 
 export interface IProjectIssues extends IBaseIssuesStore {
   viewFlags: ViewFlags;
@@ -53,19 +54,27 @@ export interface IProjectIssues extends IBaseIssuesStore {
 }
 
 export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
-  viewFlags = {
-    enableQuickAdd: true,
-    enableIssueCreation: true,
-    enableInlineEditing: true,
-  };
   router;
 
   // filter store
   issueFilterStore: IProjectIssuesFilter;
 
+  get viewFlags(): ViewFlags {
+    if (isLinearReadOnly()) {
+      return LINEAR_READ_ONLY_VIEW_FLAGS;
+    }
+
+    return {
+      enableQuickAdd: true,
+      enableIssueCreation: true,
+      enableInlineEditing: true,
+    };
+  }
+
   constructor(_rootStore: IIssueRootStore, issueFilterStore: IProjectIssuesFilter) {
     super(_rootStore, issueFilterStore);
     makeObservable(this, {
+      viewFlags: computed,
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,
@@ -83,7 +92,9 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
    * @param projectId
    */
   fetchParentStats = async (workspaceSlug: string, projectId?: string) => {
-    projectId && this.rootIssueStore.rootStore.projectRoot.project.fetchProjectDetails(workspaceSlug, projectId);
+    if (projectId) {
+      await this.rootIssueStore.rootStore.projectRoot.project.fetchProjectDetails(workspaceSlug, projectId);
+    }
   };
 
   /** */

@@ -16,6 +16,7 @@ import { AppSidebarItem } from "@/components/sidebar/sidebar-item";
 // hooks
 import { useAppRailPreferences } from "@/hooks/use-navigation-preferences";
 import { useAppRailVisibility } from "@/lib/app-rail/context";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 // local imports
 import { AppSidebarItemsRoot } from "./items-root";
 
@@ -29,6 +30,7 @@ export const AppRailRoot = observer(() => {
   // derived values
   const isWorkspaceSettingsPath = pathname.includes(`/${workspaceSlug}/settings`) && !projectId;
   const showLabel = preferences.displayMode === "icon_with_label";
+  const isReadOnly = isLinearReadOnly();
   const railWidth = showLabel ? "3.75rem" : "3rem";
 
   return (
@@ -49,16 +51,20 @@ export const AppRailRoot = observer(() => {
               })}
             >
               <AppSidebarItemsRoot showLabel={showLabel} />
-              <div className="mx-2 border-t border-strong" />
-              <AppSidebarItem
-                item={{
-                  label: "Settings",
-                  icon: <SettingsIcon className="size-5" />,
-                  href: `/${workspaceSlug}/settings`,
-                  isActive: isWorkspaceSettingsPath,
-                  showLabel,
-                }}
-              />
+              {!isReadOnly && (
+                <>
+                  <div className="mx-2 border-t border-strong" />
+                  <AppSidebarItem
+                    item={{
+                      label: "Settings",
+                      icon: <SettingsIcon className="size-5" />,
+                      href: `/${workspaceSlug}/settings`,
+                      isActive: isWorkspaceSettingsPath,
+                      showLabel,
+                    }}
+                  />
+                </>
+              )}
             </div>
           </div>
         </ContextMenu.Trigger>

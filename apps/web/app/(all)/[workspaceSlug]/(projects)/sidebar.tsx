@@ -17,6 +17,7 @@ import { SidebarMenuItems } from "@/components/workspace/sidebar/sidebar-menu-it
 // hooks
 import { useFavorite } from "@/hooks/store/use-favorite";
 import { useUserPermissions } from "@/hooks/store/user";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 
 export const AppSidebar = observer(function AppSidebar() {
   // store hooks
@@ -30,12 +31,13 @@ export const AppSidebar = observer(function AppSidebar() {
   );
 
   const isFavoriteEmpty = isEmpty(groupedFavorites);
+  const isReadOnly = isLinearReadOnly();
 
   return (
-    <SidebarWrapper title="Projects" quickActions={<SidebarQuickActions />}>
-      <SidebarMenuItems />
+    <SidebarWrapper title="Projects" quickActions={isReadOnly ? undefined : <SidebarQuickActions />}>
+      {!isReadOnly && <SidebarMenuItems />}
       {/* Favorites Menu */}
-      {canPerformWorkspaceMemberActions && !isFavoriteEmpty && <SidebarFavoritesMenu />}
+      {canPerformWorkspaceMemberActions && !isFavoriteEmpty && !isReadOnly && <SidebarFavoritesMenu />}
       {/* Projects List */}
       <SidebarProjectsList />
     </SidebarWrapper>

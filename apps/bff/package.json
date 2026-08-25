@@ -1,0 +1,40 @@
+{
+  "name": "bff",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Linear → Plane API adapter (BFF)",
+  "license": "AGPL-3.0",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "scripts": {
+    "build": "tsc --noEmit && tsdown",
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "start": "node --env-file=.env dist/index.mjs",
+    "check:lint": "oxlint --max-warnings 0 .",
+    "check:types": "tsc --noEmit",
+    "check:format": "oxfmt --check .",
+    "fix:lint": "oxlint --fix .",
+    "fix:format": "oxfmt .",
+    "test": "vitest run",
+    "test:browser": "node tests/browser.smoke.mjs",
+    "clean": "rm -rf .turbo node_modules dist"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "@linear/sdk": "^91.0.0",
+    "@plane/types": "workspace:*",
+    "hono": "^4.7.2",
+    "marked": "^18.0.10",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@plane/typescript-config": "workspace:*",
+    "@types/marked": "^6.0.0",
+    "@types/node": "catalog:",
+    "puppeteer-core": "^24.8.2",
+    "tsdown": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
