@@ -194,6 +194,8 @@ export abstract class BaseIssuesStore implements IBaseIssuesStore {
   issueFilterStore;
   // API Abort controller
   controller: AbortController;
+  /** Bumps on each fetch start so stale/aborted responses cannot overwrite newer data. */
+  private fetchSequence = 0;
 
   constructor(
     _rootStore: IIssueRootStore,
@@ -1157,6 +1159,33 @@ export abstract class BaseIssuesStore implements IBaseIssuesStore {
   /**
    * Method called to clear out the current store
    */
+  protected beginFetch(loadType: TLoader, shouldClearPaginationOptions: boolean): number {
+    const sequence = ++this.fetchSequence;
+    runInAction(() => {
+      this.setLoader(loadType);
+      this.clear(!shouldClearPaginationOptions);
+    });
+    return sequence;
+  }
+
+  protected isStaleFetch(sequence: number): boolean {
+    return sequence !== this.fetchSequence;
+  }
+
+  protected bumpFetchSequence(): number {
+    return ++this.fetchSequence;
+  }
+
+  protected isAbortError(error: unknown): boolean {
+    if (error instanceof DOMException && error.name === "AbortError") return true;
+    if (typeof error === "object" && error !== null) {
+      const name = "name" in error ? String(error.name) : "";
+      const code = "code" in error ? String(error.code) : "";
+      if (name === "AbortError" || name === "CanceledError" || code === "ERR_CANCELED") return true;
+    }
+    return false;
+  }
+
   clear(shouldClearPaginationOptions = true) {
     runInAction(() => {
       this.groupedIssueIds = undefined;

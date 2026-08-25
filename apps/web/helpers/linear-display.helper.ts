@@ -29,6 +29,15 @@ export function getLinearWorkspaceSlug(): string {
   return import.meta.env.VITE_LINEAR_WORKSPACE_SLUG || "delphic";
 }
 
+/** Decode URL-encoded project ids (e.g. linear-team:…). */
+export function decodeRouteProjectId(projectId: string | undefined): string | undefined {
+  if (!projectId) return undefined;
+  try {
+    return decodeURIComponent(projectId);
+  } catch {
+    return projectId;
+  }
+}
 /** Workspace-wide issues list (no project selected) in Linear display mode. */
 export function getLinearAllIssuesPath(workspaceSlug?: string): string {
   const slug = workspaceSlug || getLinearWorkspaceSlug();

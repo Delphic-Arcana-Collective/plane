@@ -11,8 +11,14 @@ import { useParams } from "next/navigation";
 // plane constants
 import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 // types
-import type { EIssuesStoreType, GroupByColumnTypes, TGroupedIssues, TIssueKanbanFilters } from "@plane/types";
-import { EIssueLayoutTypes } from "@plane/types";
+import {
+  EIssueLayoutTypes,
+  EIssuesStoreType,
+  type GroupByColumnTypes,
+  type TGroupedIssues,
+  type TIssueKanbanFilters,
+} from "@plane/types";
+import { decodeRouteProjectId } from "@/helpers/linear-display.helper";
 // constants
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
@@ -74,22 +80,30 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
   const { allowPermissions } = useUserPermissions();
   const { issueMap } = useIssues();
 
-  const displayFilters = issuesFilter?.issueFilters?.displayFilters;
-  const displayProperties = issuesFilter?.issueFilters?.displayProperties;
+  const { workspaceSlug, projectId: routeProjectIdParam } = useParams();
+  const workspaceSlugStr = workspaceSlug?.toString();
+  const routeProjectId = decodeRouteProjectId(routeProjectIdParam?.toString());
+
+  const issueFiltersForView =
+    storeType === EIssuesStoreType.PROJECT && routeProjectId && issuesFilter && "getIssueFilters" in issuesFilter
+      ? issuesFilter.getIssueFilters(routeProjectId)
+      : issuesFilter?.issueFilters;
+
+  const displayFilters = issueFiltersForView?.displayFilters;
+  const displayProperties = issueFiltersForView?.displayProperties;
   const orderBy = displayFilters?.order_by || undefined;
 
   const group_by = (displayFilters?.group_by || null) as GroupByColumnTypes | null;
   const showEmptyGroup = displayFilters?.show_empty_groups ?? false;
   const layout = displayFilters?.layout;
-  const { workspaceSlug, projectId } = useParams();
   const { updateFilters } = useIssuesActions(storeType);
   const collapsedGroups =
-    issuesFilter?.issueFilters?.kanbanFilters || ({ group_by: [], sub_group_by: [] } as TIssueKanbanFilters);
+    issueFiltersForView?.kanbanFilters || ({ group_by: [], sub_group_by: [] } as TIssueKanbanFilters);
 
   useEffect(() => {
-    if (!displayFilters || !workspaceSlug || !projectId) return;
+    if (!displayFilters || !workspaceSlugStr || !routeProjectId) return;
     fetchIssues("init-loader", { canGroup: true, perPageCount: group_by ? 50 : 100 }, viewId);
-  }, [fetchIssues, storeType, group_by, viewId, layout, displayFilters, workspaceSlug, projectId]);
+  }, [fetchIssues, storeType, group_by, viewId, layout, displayFilters, workspaceSlugStr, routeProjectId]);
 
   const groupedIssueIds = issues?.groupedIssueIds as TGroupedIssues | undefined;
   // auth
@@ -140,19 +154,19 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
   // kanbanFilters and EIssueFilterType.KANBAN_FILTERS are used because the state is shared between kanban view and list view
   const handleCollapsedGroups = useCallback(
     (value: string) => {
-      if (workspaceSlug) {
-        let collapsedGroupIds = issuesFilter?.issueFilters?.kanbanFilters?.group_by || [];
+      if (workspaceSlugStr) {
+        let collapsedGroupIds = issueFiltersForView?.kanbanFilters?.group_by || [];
         if (collapsedGroupIds.includes(value)) {
           collapsedGroupIds = collapsedGroupIds.filter((_value) => _value != value);
         } else {
           collapsedGroupIds.push(value);
         }
-        updateFilters(projectId?.toString() ?? "", EIssueFilterType.KANBAN_FILTERS, {
+        updateFilters(routeProjectId ?? "", EIssueFilterType.KANBAN_FILTERS, {
           group_by: collapsedGroupIds,
         } as TIssueKanbanFilters);
       }
     },
-    [workspaceSlug, issuesFilter, projectId, updateFilters]
+    [workspaceSlugStr, issueFiltersForView, routeProjectId, updateFilters]
   );
 
   return (

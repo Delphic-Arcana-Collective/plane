@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { action, computed, makeObservable, runInAction } from "mobx";
+import { action, computed, makeObservable, observable, runInAction } from "mobx";
 // types
 import type {
   TIssue,
@@ -58,6 +58,8 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
   // filter store
   issueFilterStore: IProjectIssuesFilter;
+  /** Project id for the issues currently loaded in groupedIssueIds. */
+  loadedProjectId: string | null = null;
 
   get viewFlags(): ViewFlags {
     if (isLinearReadOnly()) {
@@ -75,6 +77,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     super(_rootStore, issueFilterStore);
     makeObservable(this, {
       viewFlags: computed,
+      loadedProjectId: observable,
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,
@@ -115,13 +118,9 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     options: IssuePaginationOptions,
     isExistingPaginationOptions: boolean = false
   ) => {
-    try {
-      // set loader and clear store
-      runInAction(() => {
-        this.setLoader(loadType);
-        this.clear(!isExistingPaginationOptions); // clear while fetching from server.
-      });
+    const sequence = this.beginFetch(loadType, !isExistingPaginationOptions);
 
+    try {
       // get params from pagination options
       const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
       // call the fetch issues API with the params
@@ -129,10 +128,16 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
         signal: this.controller.signal,
       });
 
+      if (this.isStaleFetch(sequence)) return;
+
       // after fetching issues, call the base method to process the response further
       this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
+      runInAction(() => {
+        this.loadedProjectId = projectId;
+      });
       return response;
     } catch (error) {
+      if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
       // set loader to undefined if errored out
       this.setLoader(undefined);
       throw error;
@@ -153,6 +158,9 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     const cursorObject = this.getPaginationData(groupId, subGroupId);
     // if there are no pagination options and the next page results do not exist the return
     if (!this.paginationOptions || (cursorObject && !cursorObject?.nextPageResults)) return;
+
+    const sequence = this.bumpFetchSequence();
+
     try {
       // set Loader
       this.setLoader("pagination", groupId, subGroupId);
@@ -168,10 +176,13 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       // call the fetch issues API with the params for next page in issues
       const response = await this.issueService.getIssues(workspaceSlug, projectId, params);
 
+      if (this.isStaleFetch(sequence)) return;
+
       // after the next page of issues are fetched, call the base method to process the response
       this.onfetchNexIssues(response, groupId, subGroupId);
       return response;
     } catch (error) {
+      if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
       // set Loader as undefined if errored out
       this.setLoader(undefined, groupId, subGroupId);
       throw error;
@@ -191,7 +202,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     projectId: string,
     loadType: TLoader = "mutation"
   ) => {
-    if (!this.paginationOptions) return;
+    if (!this.paginationOptions || this.loadedProjectId !== projectId) return;
     return await this.fetchIssues(workspaceSlug, projectId, loadType, this.paginationOptions, true);
   };
 

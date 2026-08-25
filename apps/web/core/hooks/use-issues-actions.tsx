@@ -5,6 +5,7 @@
  */
 
 /* eslint-disable react-hooks/exhaustive-deps */
+/* oxlint-disable eslint/no-shadow -- route params and IssueActions callbacks both use projectId */
 import { useCallback, useMemo } from "react";
 // types
 import { useParams } from "next/navigation";
@@ -21,6 +22,7 @@ import type {
   TSupportedFilterForUpdate,
 } from "@plane/types";
 import { EIssuesStoreType } from "@plane/types";
+import { decodeRouteProjectId } from "@/helpers/linear-display.helper";
 import { useIssues } from "./store/use-issues";
 
 export interface IssueActions {
@@ -83,23 +85,23 @@ const useProjectIssueActions = () => {
   // router
   const { workspaceSlug: routerWorkspaceSlug, projectId: routerProjectId } = useParams();
   const workspaceSlug = routerWorkspaceSlug?.toString();
-  const projectId = routerProjectId?.toString();
+  const routeProjectId = decodeRouteProjectId(routerProjectId?.toString());
   // store hooks
   const { issues, issuesFilter } = useIssues(EIssuesStoreType.PROJECT);
 
   const fetchIssues = useCallback(
     async (loadType: TLoader, options: IssuePaginationOptions) => {
-      if (!workspaceSlug || !projectId) return;
-      return issues.fetchIssues(workspaceSlug.toString(), projectId.toString(), loadType, options);
+      if (!workspaceSlug || !routeProjectId) return;
+      return issues.fetchIssues(workspaceSlug, routeProjectId, loadType, options);
     },
-    [issues.fetchIssues, workspaceSlug, projectId]
+    [issues.fetchIssues, workspaceSlug, routeProjectId]
   );
   const fetchNextIssues = useCallback(
     async (groupId?: string, subGroupId?: string) => {
-      if (!workspaceSlug || !projectId) return;
-      return issues.fetchNextIssues(workspaceSlug.toString(), projectId.toString(), groupId, subGroupId);
+      if (!workspaceSlug || !routeProjectId) return;
+      return issues.fetchNextIssues(workspaceSlug, routeProjectId, groupId, subGroupId);
     },
-    [issues.fetchIssues, workspaceSlug, projectId]
+    [issues.fetchNextIssues, workspaceSlug, routeProjectId]
   );
 
   const createIssue = useCallback(

@@ -6,7 +6,12 @@
 
 import { useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
-import { getBffBaseUrl, getLinearWorkspaceSlug, isLinearDisplayMode } from "@/helpers/linear-display.helper";
+import {
+  getBffBaseUrl,
+  getLinearWorkspaceSlug,
+  isLinearDisplayMode,
+  decodeRouteProjectId,
+} from "@/helpers/linear-display.helper";
 import { useProject } from "@/hooks/store/use-project";
 import { useProjectState } from "@/hooks/store/use-project-state";
 import { useIssues } from "@/hooks/store/use-issues";
@@ -22,7 +27,7 @@ interface HealthResponse {
 
 export function useLinearCacheRefresh(workspaceSlug: string | undefined) {
   const { projectId: routeProjectId } = useParams();
-  const projectId = routeProjectId?.toString();
+  const projectId = decodeRouteProjectId(routeProjectId?.toString());
   const { fetchPartialProjects } = useProject();
   const { fetchWorkspaceStates } = useProjectState();
   const { issues: projectIssues } = useIssues(EIssuesStoreType.PROJECT);
