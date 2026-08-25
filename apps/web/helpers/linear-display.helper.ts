@@ -4,8 +4,9 @@
  * See the LICENSE file for details.
  */
 
-import type { IIssueDisplayFilterOptions, TIssueComment } from "@plane/types";
+import type { IIssueDisplayFilterOptions, ILayoutDisplayFiltersOptions, TIssueComment } from "@plane/types";
 import { EIssueLayoutTypes } from "@plane/types";
+import { ISSUE_DISPLAY_FILTERS_BY_PAGE } from "@plane/constants";
 
 /**
  * Linear display mode: Plane UI backed by apps/bff instead of Django.
@@ -45,12 +46,33 @@ export function getLinearAllIssuesPath(workspaceSlug?: string): string {
   return `/${slug}/workspace-views/all-issues`;
 }
 
-/** Default list/kanban display filters for Linear read-only mode. */
+/** Board, calendar, table, and timeline layouts for workspace all-issues in Linear mode. */
+export const LINEAR_WORKSPACE_LAYOUTS = [
+  EIssueLayoutTypes.KANBAN,
+  EIssueLayoutTypes.CALENDAR,
+  EIssueLayoutTypes.SPREADSHEET,
+  EIssueLayoutTypes.GANTT,
+] as const;
+
+export function isLinearWorkspaceLayout(layout: EIssueLayoutTypes | undefined): boolean {
+  return LINEAR_WORKSPACE_LAYOUTS.includes(layout as (typeof LINEAR_WORKSPACE_LAYOUTS)[number]);
+}
+
+export function getLinearWorkspaceLayoutFilterOptions(
+  layout: EIssueLayoutTypes
+): ILayoutDisplayFiltersOptions | undefined {
+  return ISSUE_DISPLAY_FILTERS_BY_PAGE.issues.layoutOptions[layout];
+}
+
+export function isLinearAllIssuesView(viewId: string | undefined): boolean {
+  return isLinearDisplayMode() && viewId === "all-issues";
+}
+
 export function getLinearDefaultDisplayFilters(): IIssueDisplayFilterOptions {
   return {
-    layout: EIssueLayoutTypes.LIST,
+    layout: EIssueLayoutTypes.KANBAN,
     order_by: "sort_order",
-    group_by: null,
+    group_by: "state",
     sub_group_by: null,
     sub_issue: false,
     show_empty_groups: false,

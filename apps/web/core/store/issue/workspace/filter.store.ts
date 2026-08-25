@@ -23,7 +23,11 @@ import type {
 } from "@plane/types";
 import { EIssuesStoreType, EIssueLayoutTypes, STATIC_VIEW_TYPES } from "@plane/types";
 import { handleIssueQueryParamsByLayout } from "@plane/utils";
-import { getLinearDefaultDisplayFilters, isLinearDisplayMode } from "@/helpers/linear-display.helper";
+import {
+  getLinearDefaultDisplayFilters,
+  isLinearAllIssuesView,
+  isLinearWorkspaceLayout,
+} from "@/helpers/linear-display.helper";
 // services
 import { WorkspaceService } from "@/services/workspace.service";
 // local imports
@@ -101,11 +105,11 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
     const userFilters = this.getIssueFilters(viewId);
     if (!userFilters) return undefined;
 
-    const layout =
-      isLinearDisplayMode() && viewId === "all-issues"
-        ? (userFilters.displayFilters?.layout ?? EIssueLayoutTypes.LIST)
-        : EIssueLayoutTypes.SPREADSHEET;
-    const filteredParams = handleIssueQueryParamsByLayout(layout, "my_issues");
+    const layout = isLinearAllIssuesView(viewId)
+      ? (userFilters.displayFilters?.layout ?? EIssueLayoutTypes.KANBAN)
+      : EIssueLayoutTypes.SPREADSHEET;
+    const filterPage = isLinearAllIssuesView(viewId) ? "issues" : "my_issues";
+    const filteredParams = handleIssueQueryParamsByLayout(layout, filterPage);
     if (!filteredParams) return undefined;
 
     const filteredRouteParams: Partial<Record<TIssueParams, string | boolean>> = this.computedFilteredParams(
@@ -163,10 +167,8 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
       sub_group_by: [],
     };
 
-    const isLinearAllIssues = isLinearDisplayMode() && viewId === "all-issues";
-    const storedFilters = isLinearAllIssues
-      ? undefined
-      : this.handleIssuesLocalFilters.get(EIssuesStoreType.GLOBAL, workspaceSlug, undefined, viewId);
+    const isLinearAllIssues = isLinearAllIssuesView(viewId);
+    const storedFilters = this.handleIssuesLocalFilters.get(EIssuesStoreType.GLOBAL, workspaceSlug, undefined, viewId);
     const defaultDisplayFilters: IIssueDisplayFilterOptions = isLinearAllIssues
       ? getLinearDefaultDisplayFilters()
       : {
@@ -174,6 +176,10 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
           order_by: "-created_at",
         };
     displayFilters = this.computedDisplayFilters(storedFilters?.display_filters, defaultDisplayFilters);
+
+    if (isLinearAllIssues && !isLinearWorkspaceLayout(displayFilters.layout)) {
+      displayFilters.layout = getLinearDefaultDisplayFilters().layout;
+    }
     displayProperties = this.computedDisplayProperties(storedFilters?.display_properties);
     kanbanFilters = {
       group_by: storedFilters?.kanban_filters?.group_by || [],
