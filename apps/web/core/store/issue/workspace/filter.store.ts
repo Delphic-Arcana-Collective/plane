@@ -167,7 +167,7 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
     const storedFilters = isLinearAllIssues
       ? undefined
       : this.handleIssuesLocalFilters.get(EIssuesStoreType.GLOBAL, workspaceSlug, undefined, viewId);
-    const defaultDisplayFilters = isLinearAllIssues
+    const defaultDisplayFilters: IIssueDisplayFilterOptions = isLinearAllIssues
       ? getLinearDefaultDisplayFilters()
       : {
           layout: EIssueLayoutTypes.SPREADSHEET,
