@@ -5,7 +5,7 @@ import { runSync as runSyncCore, type RunSyncOptions } from "../sync/run-sync.js
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
 
 export async function runSync(env: Env, cache: CacheBackend, retries = 3): Promise<void> {
-  return runSyncCore(env, cache, { retries, reason: "node-poll" });
+  await runSyncCore(env, cache, { retries, reason: "node-poll" });
 }
 
 export function startWorker(env: Env, cache: CacheBackend): void {
