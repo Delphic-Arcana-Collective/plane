@@ -29,6 +29,12 @@ export function getLinearWorkspaceSlug(): string {
   return import.meta.env.VITE_LINEAR_WORKSPACE_SLUG || "delphic";
 }
 
+/** Workspace-wide issues list (no project selected) in Linear display mode. */
+export function getLinearAllIssuesPath(workspaceSlug?: string): string {
+  const slug = workspaceSlug || getLinearWorkspaceSlug();
+  return `/${slug}/workspace-views/all-issues`;
+}
+
 /** Default list/kanban display filters for Linear read-only mode. */
 export function getLinearDefaultDisplayFilters() {
   return {

@@ -11,7 +11,7 @@ import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/eleme
 import { setCustomNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview";
 import { attachInstruction, extractInstruction } from "@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item";
 import { observer } from "mobx-react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { createRoot } from "react-dom/client";
 import scrollIntoView from "smooth-scroll-into-view-if-needed";
 import { Settings, Share2, LogOut, MoreHorizontal } from "lucide-react";
@@ -26,7 +26,7 @@ import { IconButton } from "@plane/propel/icon-button";
 import { Tooltip } from "@plane/propel/tooltip";
 import { CustomMenu, DropIndicator, DragHandle, ControlLink } from "@plane/ui";
 import { cn } from "@plane/utils";
-import { isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { getLinearAllIssuesPath, isLinearDisplayMode, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // components
 import { DEFAULT_TAB_KEY, getTabUrl } from "@/components/navigation/tab-navigation-utils";
 import { useTabPreferences } from "@/components/navigation/use-tab-preferences";
@@ -77,7 +77,8 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   const { allowPermissions } = useUserPermissions();
   const { getIsProjectListOpen, toggleProjectListOpen } = useCommandPalette();
   const { preferences: projectPreferences } = useProjectNavigationPreferences();
-  const { isExtendedProjectSidebarOpened, toggleExtendedProjectSidebar, toggleAnySidebarDropdown } = useAppTheme();
+  const { isExtendedProjectSidebarOpened, toggleExtendedProjectSidebar, toggleAnySidebarDropdown, toggleSidebar } =
+    useAppTheme();
 
   // states
   const [leaveProjectModalOpen, setLeaveProjectModal] = useState(false);
@@ -92,9 +93,17 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);
   // router
   const { workspaceSlug, projectId: URLProjectId } = useParams();
+  const pathname = usePathname();
   const router = useRouter();
   // derived values
   const project = getPartialProjectById(projectId);
+  const isLinearMode = isLinearDisplayMode();
+  const encodedProjectId = encodeURIComponent(projectId);
+  const linearIssuesUrl = `/${workspaceSlug}/projects/${encodedProjectId}/issues`;
+  const linearAllIssuesUrl = getLinearAllIssuesPath(workspaceSlug?.toString());
+  const activeProjectId = URLProjectId?.toString() ? decodeURIComponent(URLProjectId.toString()) : undefined;
+  const isOnAllIssuesView = pathname?.includes("/workspace-views/all-issues");
+  const isProjectSelected = !isOnAllIssuesView && activeProjectId === project?.id;
 
   // Get available navigation items for this project
   const navigationItems = useNavigationItems({
@@ -237,7 +246,7 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-    if (URLProjectId === project?.id) {
+    if (activeProjectId === project?.id && !isLinearMode) {
       setIsProjectListOpen(true);
       // Scroll to active project
       if (projectRef.current) {
@@ -258,13 +267,29 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
         clearTimeout(timeoutId);
       }
     };
-  }, [URLProjectId, project?.id, setIsProjectListOpen]);
+  }, [activeProjectId, project?.id, setIsProjectListOpen, isLinearMode]);
 
   if (!project) return null;
 
-  const isAccordionMode = projectPreferences.navigationMode === "ACCORDION";
+  const isAccordionMode = !isLinearMode && projectPreferences.navigationMode === "ACCORDION";
 
-  const handleItemClick = () => {
+  const handleItemClick = (event?: React.MouseEvent) => {
+    if (isLinearMode) {
+      event?.preventDefault();
+      if (isProjectSelected) {
+        router.push(linearAllIssuesUrl);
+      } else {
+        router.push(linearIssuesUrl);
+      }
+      if (isExtendedProjectSidebarOpened) {
+        toggleExtendedProjectSidebar(false);
+      }
+      if (window.innerWidth < 768) {
+        toggleSidebar();
+      }
+      return;
+    }
+
     if (projectPreferences.navigationMode === "ACCORDION") {
       setIsProjectListOpen(!isProjectListOpen);
     } else {
@@ -276,7 +301,9 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
     }
   };
 
-  const shouldHighlightProject = URLProjectId === project?.id && projectPreferences.navigationMode !== "ACCORDION";
+  const shouldHighlightProject =
+    isProjectSelected && (isLinearMode || projectPreferences.navigationMode !== "ACCORDION");
+  const projectLinkUrl = isLinearMode ? linearIssuesUrl : defaultTabUrl;
 
   return (
     <>
@@ -327,7 +354,7 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
               </Tooltip>
             )}
             <>
-              <ControlLink href={defaultTabUrl} className="flex flex-grow truncate" onClick={handleItemClick}>
+              <ControlLink href={projectLinkUrl} className="flex flex-grow truncate" onClick={handleItemClick}>
                 {isAccordionMode ? (
                   <Disclosure.Button
                     as="button"

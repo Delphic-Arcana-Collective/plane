@@ -30,6 +30,11 @@ const LEGACY_KV_KEYS = [
   KV_KEYS.users,
 ] as const;
 
+function logKvError(operation: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`[bff] KV ${operation} failed (continuing without cache):`, message);
+}
+
 export class KvCacheBackend extends MemoryCacheBackend implements KvCacheBackendInterface {
   private loaded = false;
   private loadedAt: string | null = null;
@@ -38,78 +43,139 @@ export class KvCacheBackend extends MemoryCacheBackend implements KvCacheBackend
     super();
   }
 
+  private async kvGet(key: string): Promise<string | null> {
+    try {
+      return await this.kv.get(key);
+    } catch (error) {
+      logKvError(`read ${key}`, error);
+      return null;
+    }
+  }
+
+  private async kvPut(key: string, value: string, options?: KVNamespacePutOptions): Promise<boolean> {
+    try {
+      await this.kv.put(key, value, options);
+      return true;
+    } catch (error) {
+      logKvError(`write ${key}`, error);
+      return false;
+    }
+  }
+
+  private async kvDelete(key: string): Promise<void> {
+    try {
+      await this.kv.delete(key);
+    } catch (error) {
+      logKvError(`delete ${key}`, error);
+    }
+  }
+
   override async ensureLoaded(): Promise<void> {
-    const snapshotRaw = await this.kv.get(KV_KEYS.snapshot);
-    if (snapshotRaw) {
-      const snapshot = deserializePlaneCache(snapshotRaw);
-      if (this.loaded && this.loadedAt === snapshot.lastFetchedAt) return;
+    if (this.loaded && this.loadedAt === this.cache.lastFetchedAt) return;
 
-      this.replaceCache(snapshot);
+    try {
+      const snapshotRaw = await this.kvGet(KV_KEYS.snapshot);
+      if (snapshotRaw) {
+        try {
+          const snapshot = deserializePlaneCache(snapshotRaw);
+          this.replaceCache(snapshot);
+          this.loaded = true;
+          this.loadedAt = snapshot.lastFetchedAt;
+          return;
+        } catch (error) {
+          logKvError("deserialize snapshot", error);
+        }
+      }
+
+      const metaRaw = await this.kvGet(KV_KEYS.meta);
+      if (!metaRaw) {
+        this.loaded = true;
+        this.loadedAt = null;
+        return;
+      }
+
+      let meta: ReturnType<typeof deserializeCacheMeta>;
+      try {
+        meta = deserializeCacheMeta(metaRaw);
+      } catch (error) {
+        logKvError("deserialize meta", error);
+        this.loaded = true;
+        this.loadedAt = null;
+        return;
+      }
+
+      if (this.loaded && this.loadedAt === meta.lastFetchedAt) return;
+
+      await this.loadLegacyShards(meta);
+    } catch (error) {
+      logKvError("ensureLoaded", error);
       this.loaded = true;
-      this.loadedAt = snapshot.lastFetchedAt;
-      return;
+      this.loadedAt = this.cache.lastFetchedAt;
     }
-
-    const metaRaw = await this.kv.get(KV_KEYS.meta);
-    if (!metaRaw) {
-      this.loaded = true;
-      this.loadedAt = null;
-      return;
-    }
-
-    const meta = deserializeCacheMeta(metaRaw);
-    if (this.loaded && this.loadedAt === meta.lastFetchedAt) return;
-
-    // Legacy multi-key layout (pre-snapshot): load, then migrate to atomic blob.
-    await this.loadLegacyShards(meta);
   }
 
   private async loadLegacyShards(meta: ReturnType<typeof deserializeCacheMeta>): Promise<void> {
     const [workspaceRaw, projectsRaw, statesRaw, labelsRaw, issuesRaw, commentsRaw, usersRaw] = await Promise.all([
-      this.kv.get(KV_KEYS.workspace),
-      this.kv.get(KV_KEYS.projects),
-      this.kv.get(KV_KEYS.states),
-      this.kv.get(KV_KEYS.labels),
-      this.kv.get(KV_KEYS.issues),
-      this.kv.get(KV_KEYS.comments),
-      this.kv.get(KV_KEYS.users),
+      this.kvGet(KV_KEYS.workspace),
+      this.kvGet(KV_KEYS.projects),
+      this.kvGet(KV_KEYS.states),
+      this.kvGet(KV_KEYS.labels),
+      this.kvGet(KV_KEYS.issues),
+      this.kvGet(KV_KEYS.comments),
+      this.kvGet(KV_KEYS.users),
     ]);
 
-    const workspace = workspaceRaw
-      ? (JSON.parse(workspaceRaw) as ReturnType<typeof assemblePlaneCache>["workspace"])
-      : null;
-    const projects = projectsRaw ? (JSON.parse(projectsRaw) as ReturnType<typeof assemblePlaneCache>["projects"]) : [];
+    try {
+      const workspace = workspaceRaw
+        ? (JSON.parse(workspaceRaw) as ReturnType<typeof assemblePlaneCache>["workspace"])
+        : null;
+      const projects = projectsRaw
+        ? (JSON.parse(projectsRaw) as ReturnType<typeof assemblePlaneCache>["projects"])
+        : [];
 
-    this.replaceCache(
-      assemblePlaneCache(meta, workspace, projects, statesRaw, labelsRaw, issuesRaw, commentsRaw, usersRaw)
-    );
-    this.loaded = true;
-    this.loadedAt = meta.lastFetchedAt;
+      this.replaceCache(
+        assemblePlaneCache(meta, workspace, projects, statesRaw, labelsRaw, issuesRaw, commentsRaw, usersRaw)
+      );
+      this.loaded = true;
+      this.loadedAt = meta.lastFetchedAt;
 
-    if (this.cache.ready) {
-      await this.persistSnapshot();
+      if (this.cache.ready) {
+        await this.persistSnapshot();
+      }
+    } catch (error) {
+      logKvError("load legacy shards", error);
+      this.loaded = true;
+      this.loadedAt = null;
     }
   }
 
-  private async persistSnapshot(): Promise<void> {
+  private async persistSnapshot(): Promise<boolean> {
     const cache = this.cache;
     const snapshotBlob = serializePlaneCache(cache);
 
-    // 1. Write full snapshot blob (atomic unit for readers).
-    await this.kv.put(KV_KEYS.snapshot, snapshotBlob);
-    // 2. Publish meta pointer only after snapshot is complete.
-    await this.kv.put(KV_KEYS.meta, serializeCacheMeta(cache));
-    // 3. Remove legacy shards so nothing reads a mixed generation.
-    await Promise.all(LEGACY_KV_KEYS.map((key) => this.kv.delete(key)));
+    const snapshotWritten = await this.kvPut(KV_KEYS.snapshot, snapshotBlob);
+    const metaWritten = await this.kvPut(KV_KEYS.meta, serializeCacheMeta(cache));
+    await Promise.all(LEGACY_KV_KEYS.map((key) => this.kvDelete(key)));
 
-    this.loaded = true;
-    this.loadedAt = cache.lastFetchedAt;
+    if (snapshotWritten && metaWritten) {
+      this.loaded = true;
+      this.loadedAt = cache.lastFetchedAt;
+      return true;
+    }
+
+    return false;
   }
 
   override async applySnapshot(snapshot: Parameters<CacheBackend["applySnapshot"]>[0], env: Env): Promise<void> {
     await super.applySnapshot(snapshot, env);
-    await this.persistSnapshot();
-    await this.kv.put(SYNC_LAST_COMPLETED_AT_KEY, new Date().toISOString());
+
+    const persisted = await this.persistSnapshot();
+    if (persisted) {
+      await this.kvPut(SYNC_LAST_COMPLETED_AT_KEY, new Date().toISOString());
+    }
+
+    this.loaded = true;
+    this.loadedAt = this.cache.lastFetchedAt;
   }
 
   override async setError(message: string): Promise<void> {
@@ -124,16 +190,21 @@ export class KvCacheBackend extends MemoryCacheBackend implements KvCacheBackend
     this.loaded = true;
     this.loadedAt = null;
     await Promise.all([
-      this.kv.delete(KV_KEYS.meta),
-      this.kv.delete(KV_KEYS.snapshot),
-      ...LEGACY_KV_KEYS.map((key) => this.kv.delete(key)),
+      this.kvDelete(KV_KEYS.meta),
+      this.kvDelete(KV_KEYS.snapshot),
+      ...LEGACY_KV_KEYS.map((key) => this.kvDelete(key)),
     ]);
   }
 
   override async getProjectUserProperties(projectId: string): Promise<IProjectUserPropertiesResponse> {
-    const stored = await this.kv.get(getProjectUserPropertiesKey(projectId));
+    const stored = await this.kvGet(getProjectUserPropertiesKey(projectId));
     if (!stored) return structuredClone(EMPTY_PROJECT_USER_PROPERTIES);
-    return JSON.parse(stored) as IProjectUserPropertiesResponse;
+    try {
+      return JSON.parse(stored) as IProjectUserPropertiesResponse;
+    } catch (error) {
+      logKvError(`parse user-properties ${projectId}`, error);
+      return structuredClone(EMPTY_PROJECT_USER_PROPERTIES);
+    }
   }
 
   override async updateProjectUserProperties(
@@ -142,43 +213,48 @@ export class KvCacheBackend extends MemoryCacheBackend implements KvCacheBackend
   ): Promise<IProjectUserPropertiesResponse> {
     const current = await this.getProjectUserProperties(projectId);
     const next = mergeProjectUserProperties(current, patch);
-    await this.kv.put(getProjectUserPropertiesKey(projectId), JSON.stringify(next));
+    await this.kvPut(getProjectUserPropertiesKey(projectId), JSON.stringify(next));
     return next;
   }
 
   override async tryAcquireSyncLock(): Promise<boolean> {
-    const existing = await this.kv.get(SYNC_IN_PROGRESS_KEY);
-    if (existing) return false;
-    await this.kv.put(SYNC_IN_PROGRESS_KEY, "1", { expirationTtl: 300 });
-    return true;
+    try {
+      const existing = await this.kv.get(SYNC_IN_PROGRESS_KEY);
+      if (existing) return false;
+      await this.kv.put(SYNC_IN_PROGRESS_KEY, "1", { expirationTtl: 300 });
+      return true;
+    } catch (error) {
+      logKvError("acquire sync lock", error);
+      return true;
+    }
   }
 
   override async releaseSyncLock(): Promise<void> {
-    await this.kv.delete(SYNC_IN_PROGRESS_KEY);
+    await this.kvDelete(SYNC_IN_PROGRESS_KEY);
   }
 
   async markWebhookDeliveryProcessed(deliveryId: string): Promise<boolean> {
     const key = `${WEBHOOK_DELIVERY_PREFIX}${deliveryId}`;
-    const existing = await this.kv.get(key);
+    const existing = await this.kvGet(key);
     if (existing) return false;
-    await this.kv.put(key, "1", { expirationTtl: 86_400 });
+    await this.kvPut(key, "1", { expirationTtl: 86_400 });
     return true;
   }
 
   async scheduleSyncAt(isoTimestamp: string): Promise<void> {
-    await this.kv.put(SYNC_SCHEDULED_AT_KEY, isoTimestamp);
+    await this.kvPut(SYNC_SCHEDULED_AT_KEY, isoTimestamp);
   }
 
   async getScheduledSyncAt(): Promise<string | null> {
-    return this.kv.get(SYNC_SCHEDULED_AT_KEY);
+    return this.kvGet(SYNC_SCHEDULED_AT_KEY);
   }
 
   async getLastCompletedAt(): Promise<string | null> {
-    return this.kv.get(SYNC_LAST_COMPLETED_AT_KEY);
+    return this.kvGet(SYNC_LAST_COMPLETED_AT_KEY);
   }
 
   async isSyncInProgress(): Promise<boolean> {
-    const value = await this.kv.get(SYNC_IN_PROGRESS_KEY);
+    const value = await this.kvGet(SYNC_IN_PROGRESS_KEY);
     return value !== null;
   }
 }

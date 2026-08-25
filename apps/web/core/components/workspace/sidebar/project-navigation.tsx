@@ -141,6 +141,9 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
 
   // memoized navigation items and adding additional navigation items
   const navigationItemsMemo = useMemo(() => {
+    // TODO(linear-display): Re-enable work_items and views sidebar sub-navigation when needed.
+    if (isLinearDisplayMode()) return [];
+
     const navigationItems = (slug: string, projId: string): TNavigationItem[] => {
       const navItems = baseNavigation(slug, projId);
 
@@ -153,18 +156,16 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
 
     // sort navigation items by sortOrder
     const sortedNavigationItems = navigationItems(workspaceSlug, projectId)
+      /*
+      // TODO(linear-display): Re-enable when views tab is supported.
       .filter((item) => {
         if (isLinearDisplayMode()) {
           if (item.key !== "work_items" && item.key !== "views") return false;
         }
         return true;
       })
-      .toSorted((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
-      // oxlint-disable-next-line oxc/no-map-spread
-      .map((item) => ({
-        ...item,
-        isDisabled: isLinearDisplayMode() && item.key === "views",
-      }));
+      */
+      .toSorted((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
     return sortedNavigationItems;
   }, [workspaceSlug, projectId, baseNavigation, additionalNavigationItems]);
@@ -186,6 +187,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
     [pathname, workItem, workItemId, projectId]
   );
 
+  if (isLinearDisplayMode()) return null;
   if (!project) return null;
 
   return (

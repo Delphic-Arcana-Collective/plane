@@ -100,29 +100,26 @@ export const useNavigationItems = ({
 
   // Combine, filter, and sort navigation items
   const navigationItems = useMemo(() => {
+    // TODO(linear-display): Re-enable work_items and views tab navigation when needed.
+    if (isLinearDisplayMode()) return [];
+
     const navItems = baseNavigation(workspaceSlug, projectId);
 
     // Filter by permissions and shouldRender
     const filteredItems = navItems.filter((item) => {
+      /*
+      // TODO(linear-display): Re-enable when views tab is supported.
       if (isLinearDisplayMode()) {
         if (item.key !== "work_items" && item.key !== "views") return false;
       }
+      */
       if (!item.shouldRender) return false;
       const hasAccess = allowPermissions(item.access, EUserPermissionsLevel.PROJECT, workspaceSlug, project?.id ?? "");
       return hasAccess;
     });
 
     // Sort by sortOrder
-    // oxlint-disable-next-line unicorn/no-array-sort
-    return (
-      filteredItems
-        .toSorted((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
-        // oxlint-disable-next-line oxc/no-map-spread
-        .map((item) => ({
-          ...item,
-          isDisabled: isLinearDisplayMode() && item.key === "views",
-        }))
-    );
+    return filteredItems.toSorted((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   }, [workspaceSlug, projectId, baseNavigation, allowPermissions, project?.id]);
 
   return navigationItems;

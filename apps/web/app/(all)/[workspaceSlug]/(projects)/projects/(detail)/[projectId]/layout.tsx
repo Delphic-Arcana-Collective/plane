@@ -16,6 +16,7 @@ import { AppSidebarToggleButton } from "@/components/sidebar/sidebar-toggle-butt
 import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useProjectNavigationPreferences } from "@/hooks/use-navigation-preferences";
 // layouts
+import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
 import { ProjectAuthWrapper } from "@/layouts/auth-layout/project-wrapper";
 // local imports
 import type { Route } from "./+types/layout";
@@ -30,7 +31,7 @@ function ProjectLayout({ params }: Route.ComponentProps) {
 
   return (
     <>
-      {projectPreferences.navigationMode === "TABBED" && (
+      {projectPreferences.navigationMode === "TABBED" && !isLinearDisplayMode() && (
         <div className="z-20">
           <Row className="flex h-header w-full items-center gap-2 border-b border-subtle bg-surface-1">
             <div className="flex h-full w-full items-center gap-2 divide-x divide-subtle">

@@ -29,7 +29,12 @@ export function createServer(env: Env, cacheBackend: CacheBackend) {
   app.use("*", async (c, next) => {
     c.set("env", env);
     c.set("cache", cacheBackend);
-    await cacheBackend.ensureLoaded();
+    try {
+      await cacheBackend.ensureLoaded();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[bff] ensureLoaded middleware error:", message);
+    }
     c.header("Cache-Control", "no-store");
     await next();
   });

@@ -23,6 +23,7 @@ import type {
 } from "@plane/types";
 import { EIssuesStoreType, EIssueLayoutTypes, STATIC_VIEW_TYPES } from "@plane/types";
 import { handleIssueQueryParamsByLayout } from "@plane/utils";
+import { getLinearDefaultDisplayFilters, isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // services
 import { WorkspaceService } from "@/services/workspace.service";
 // local imports
@@ -158,15 +159,19 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
       sub_group_by: [],
     };
 
-    const _filters = this.handleIssuesLocalFilters.get(EIssuesStoreType.GLOBAL, workspaceSlug, undefined, viewId);
-    displayFilters = this.computedDisplayFilters(_filters?.display_filters, {
-      layout: EIssueLayoutTypes.SPREADSHEET,
-      order_by: "-created_at",
-    });
-    displayProperties = this.computedDisplayProperties(_filters?.display_properties);
+    const storedFilters = this.handleIssuesLocalFilters.get(EIssuesStoreType.GLOBAL, workspaceSlug, undefined, viewId);
+    const defaultDisplayFilters =
+      isLinearDisplayMode() && viewId === "all-issues"
+        ? getLinearDefaultDisplayFilters()
+        : {
+            layout: EIssueLayoutTypes.SPREADSHEET,
+            order_by: "-created_at",
+          };
+    displayFilters = this.computedDisplayFilters(storedFilters?.display_filters, defaultDisplayFilters);
+    displayProperties = this.computedDisplayProperties(storedFilters?.display_properties);
     kanbanFilters = {
-      group_by: _filters?.kanban_filters?.group_by || [],
-      sub_group_by: _filters?.kanban_filters?.sub_group_by || [],
+      group_by: storedFilters?.kanban_filters?.group_by || [],
+      sub_group_by: storedFilters?.kanban_filters?.sub_group_by || [],
     };
 
     // Get the view details if the view is not a static view

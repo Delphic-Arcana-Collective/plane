@@ -16,12 +16,30 @@ export function buildProjectIssuesResponse(issues: TIssue[], query: Record<strin
 export async function requireCache(c: Context): Promise<Response | null> {
   const env = c.get("env");
   const cache = getCache(c);
-  await cache.ensureLoaded();
+
+  try {
+    await cache.ensureLoaded();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[bff] ensureLoaded threw; continuing with in-memory cache:", message);
+  }
 
   if (!cache.cache.ready && env.LINEAR_API_KEY) {
     if (env.SYNC_ON_CACHE_MISS) {
-      await runSync(env, cache, { reason: "cache-miss" });
-      await cache.ensureLoaded();
+      try {
+        await runSync(env, cache, { reason: "cache-miss" });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("[bff] cache-miss sync failed:", message);
+      }
+
+      try {
+        await cache.ensureLoaded();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("[bff] ensureLoaded after sync threw:", message);
+      }
+
       if (cache.cache.ready) return null;
     }
     return c.json({ error: "Cache not ready", retry_after: 5 }, 503, {
