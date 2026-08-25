@@ -5,6 +5,7 @@
  */
 
 import { EIssueLayoutTypes } from "@plane/types";
+import { WorkspaceListRoot } from "@/components/issues/issue-layouts/list/roots/workspace-root";
 import { WorkspaceSpreadsheetRoot } from "@/components/issues/issue-layouts/spreadsheet/roots/workspace-root";
 
 export type TWorkspaceLayoutProps = {
@@ -36,6 +37,16 @@ export function WorkspaceActiveLayout(props: TWorkspaceLayoutProps) {
     issuesLoading,
   } = props;
   switch (activeLayout) {
+    case EIssueLayoutTypes.LIST:
+      return (
+        <WorkspaceListRoot
+          isLoading={isLoading}
+          workspaceSlug={workspaceSlug}
+          globalViewId={globalViewId}
+          fetchNextPages={fetchNextPages}
+          issuesLoading={issuesLoading}
+        />
+      );
     case EIssueLayoutTypes.SPREADSHEET:
       return (
         <WorkspaceSpreadsheetRoot

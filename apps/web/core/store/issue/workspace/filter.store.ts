@@ -101,7 +101,11 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
     const userFilters = this.getIssueFilters(viewId);
     if (!userFilters) return undefined;
 
-    const filteredParams = handleIssueQueryParamsByLayout(EIssueLayoutTypes.SPREADSHEET, "my_issues");
+    const layout =
+      isLinearDisplayMode() && viewId === "all-issues"
+        ? (userFilters.displayFilters?.layout ?? EIssueLayoutTypes.LIST)
+        : EIssueLayoutTypes.SPREADSHEET;
+    const filteredParams = handleIssueQueryParamsByLayout(layout, "my_issues");
     if (!filteredParams) return undefined;
 
     const filteredRouteParams: Partial<Record<TIssueParams, string | boolean>> = this.computedFilteredParams(
@@ -159,14 +163,16 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
       sub_group_by: [],
     };
 
-    const storedFilters = this.handleIssuesLocalFilters.get(EIssuesStoreType.GLOBAL, workspaceSlug, undefined, viewId);
-    const defaultDisplayFilters =
-      isLinearDisplayMode() && viewId === "all-issues"
-        ? getLinearDefaultDisplayFilters()
-        : {
-            layout: EIssueLayoutTypes.SPREADSHEET,
-            order_by: "-created_at",
-          };
+    const isLinearAllIssues = isLinearDisplayMode() && viewId === "all-issues";
+    const storedFilters = isLinearAllIssues
+      ? undefined
+      : this.handleIssuesLocalFilters.get(EIssuesStoreType.GLOBAL, workspaceSlug, undefined, viewId);
+    const defaultDisplayFilters = isLinearAllIssues
+      ? getLinearDefaultDisplayFilters()
+      : {
+          layout: EIssueLayoutTypes.SPREADSHEET,
+          order_by: "-created_at",
+        };
     displayFilters = this.computedDisplayFilters(storedFilters?.display_filters, defaultDisplayFilters);
     displayProperties = this.computedDisplayProperties(storedFilters?.display_properties);
     kanbanFilters = {
@@ -186,7 +192,7 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
     }
 
     // override existing order by if ordered by manual sort_order
-    if (displayFilters.order_by === "sort_order") {
+    if (!isLinearAllIssues && displayFilters.order_by === "sort_order") {
       displayFilters.order_by = "-created_at";
     }
 

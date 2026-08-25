@@ -4,7 +4,8 @@
  * See the LICENSE file for details.
  */
 
-import type { TIssueComment } from "@plane/types";
+import type { IIssueDisplayFilterOptions, TIssueComment } from "@plane/types";
+import { EIssueLayoutTypes } from "@plane/types";
 
 /**
  * Linear display mode: Plane UI backed by apps/bff instead of Django.
@@ -45,17 +46,17 @@ export function getLinearAllIssuesPath(workspaceSlug?: string): string {
 }
 
 /** Default list/kanban display filters for Linear read-only mode. */
-export function getLinearDefaultDisplayFilters() {
+export function getLinearDefaultDisplayFilters(): IIssueDisplayFilterOptions {
   return {
-    layout: "list" as const,
-    order_by: "sort_order" as const,
-    group_by: "state" as const,
+    layout: EIssueLayoutTypes.LIST,
+    order_by: "sort_order",
+    group_by: null,
     sub_group_by: null,
     sub_issue: false,
     show_empty_groups: false,
     calendar: {
       show_weekends: false,
-      layout: "month" as const,
+      layout: "month",
     },
   };
 }
