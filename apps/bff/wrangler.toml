@@ -4,6 +4,7 @@
 # Account ID: set via `wrangler login` or CLOUDFLARE_ACCOUNT_ID at deploy time.
 
 name = "linear-bff"
+account_id = "370835bb522078b02a75e63c7d477e9e"
 main = "src/worker-entry.ts"
 compatibility_date = "2026-08-25"
 compatibility_flags = ["nodejs_compat"]
