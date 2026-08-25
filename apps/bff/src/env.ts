@@ -22,8 +22,6 @@ const envSchema = z.object({
   LINEAR_WEBHOOK_SECRET: z.string().optional(),
   CACHE_POLL_INTERVAL_MS: z.coerce.number().optional(),
   CACHE_INITIAL_FETCH: booleanFromEnv,
-  SYNC_DEBOUNCE_MS: z.coerce.number().default(30_000),
-  SYNC_MIN_INTERVAL_MS: z.coerce.number().default(30_000),
   SYNC_ON_CACHE_MISS: booleanFromEnv,
   WEB_APP_BASE_URL: z.string().default("http://localhost:3000"),
 });
@@ -70,8 +68,6 @@ export interface CloudflareEnv extends Record<string, unknown> {
   MOCK_USER_EMAIL?: string;
   MOCK_USER_NAME?: string;
   WEB_APP_BASE_URL?: string;
-  SYNC_DEBOUNCE_MS?: string;
-  SYNC_MIN_INTERVAL_MS?: string;
   SYNC_ON_CACHE_MISS?: string;
   CACHE_INITIAL_FETCH?: string;
   NODE_ENV?: string;

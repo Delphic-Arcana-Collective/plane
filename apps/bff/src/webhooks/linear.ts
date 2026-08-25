@@ -1,6 +1,6 @@
 import type { KvCacheBackend } from "../cache/backend.js";
 import type { Env } from "../env.js";
-import { scheduleDebouncedSync } from "../sync/debounce.js";
+import { runSync } from "../sync/run-sync.js";
 
 const SIGNATURE_HEADER = "Linear-Signature";
 const DELIVERY_HEADER = "Linear-Delivery";
@@ -96,7 +96,12 @@ export async function handleLinearWebhook(
     }
   }
 
-  scheduleDebouncedSync(env, cache, ctx, "webhook");
+  ctx.waitUntil(
+    runSync(env, cache, { reason: "webhook" }).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[bff] Webhook sync failed:", message);
+    })
+  );
 
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,

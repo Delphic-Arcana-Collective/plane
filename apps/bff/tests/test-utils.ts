@@ -22,8 +22,6 @@ export function createTestEnv(overrides: Partial<Env> = {}): Env {
     LINEAR_WEBHOOK_SECRET: undefined,
     CACHE_POLL_INTERVAL_MS: 60_000,
     CACHE_INITIAL_FETCH: false,
-    SYNC_DEBOUNCE_MS: 30_000,
-    SYNC_MIN_INTERVAL_MS: 30_000,
     SYNC_ON_CACHE_MISS: true,
     ...overrides,
   };

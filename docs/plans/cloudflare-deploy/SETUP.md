@@ -17,17 +17,17 @@
 
 CI 负责 `wrangler deploy` + `wrangler secret put`；**无需**本机手动操作。
 
-### Cloudflare API Token 权限（若 CI 报 `Authentication error [code: 10000]`）
+### Cloudflare API Token（若 CI 报 `Authentication error [code: 10000]`）
 
-编辑 Token 时勾选：
+**不要用** Dashboard 里自动生成的 **「Cloudflare Agent Token」**（Account API Token，`cfat_` 开头）。这类 Token 在权限摘要里会显示 `Workers Scripts: Edit`，但实际 **无法上传 Worker / 创建 Pages 项目**（读可以，写返回 403）。
 
-- Account → **Workers Scripts** → Edit
-- Account → **Workers KV Storage** → Edit
-- Account → **Cloudflare Pages** → Edit
-- Account → **Account Settings** → Read
-- User → **Memberships** → Read
+请改用 **User API Token**（[My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens)）：
 
-若新建了 Token，需更新 GitHub Secret `CLOUDFLARE_API_TOKEN`。
+1. **Create Token** → 模板 **「Edit Cloudflare Workers」**
+2. 额外勾选 Account → **Cloudflare Pages** → Edit
+3. 创建后把完整 Token 值更新到 GitHub Secret `CLOUDFLARE_API_TOKEN`
+
+`wrangler.toml` 已固定 `account_id`；`Memberships: Read` 的提示是 wrangler 失败后的附带诊断，不是根因。
 
 若 secret 同步仍失败，可临时在 Dashboard → Worker `linear-bff` → Settings → Variables 手动添加 `LINEAR_API_KEY` 与 `LINEAR_WEBHOOK_SECRET`。
 
