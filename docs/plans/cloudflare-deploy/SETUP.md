@@ -15,7 +15,21 @@
 | Linear webhook        | `https://linear.delphic.studio/webhooks/linear`，All public teams                                                 |
 | Workspace slug        | `delphic`                                                                                                         |
 
-CI 负责 `wrangler secret put` + deploy；**无需**手动 `wrangler secret put`。
+CI 负责 `wrangler deploy` + `wrangler secret put`；**无需**本机手动操作。
+
+### Cloudflare API Token 权限（若 CI 报 `Authentication error [code: 10000]`）
+
+编辑 Token 时勾选：
+
+- Account → **Workers Scripts** → Edit
+- Account → **Workers KV Storage** → Edit
+- Account → **Cloudflare Pages** → Edit
+- Account → **Account Settings** → Read
+- User → **Memberships** → Read
+
+若新建了 Token，需更新 GitHub Secret `CLOUDFLARE_API_TOKEN`。
+
+若 secret 同步仍失败，可临时在 Dashboard → Worker `linear-bff` → Settings → Variables 手动添加 `LINEAR_API_KEY` 与 `LINEAR_WEBHOOK_SECRET`。
 
 ---
 
