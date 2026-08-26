@@ -6,6 +6,7 @@
 
 import { action, computed, makeObservable, observable, runInAction } from "mobx";
 import { cloneDeep } from "lodash-es";
+import { ALL_ISSUES } from "@plane/constants";
 // types
 import type {
   TIssue,
@@ -87,12 +88,28 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   isProjectDataReady = (projectId: string): boolean => {
     if (this.activeProjectId !== projectId || this.loadedProjectId !== projectId) return false;
     const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
-    return hasLinearGroupedIssueData(
-      this.groupedIssueIds as TGroupedIssues,
-      displayFilters?.layout,
-      displayFilters?.group_by as GroupByColumnTypes | null
-    );
+    const groupedIssueIds = this.groupedIssueIds as TGroupedIssues | undefined;
+    if (
+      !hasLinearGroupedIssueData(
+        groupedIssueIds,
+        displayFilters?.layout,
+        displayFilters?.group_by as GroupByColumnTypes | null
+      )
+    ) {
+      return false;
+    }
+
+    return this.hasResolvedProjectIssuesInMap(groupedIssueIds, projectId);
   };
+
+  private hasResolvedProjectIssuesInMap(groupedIssueIds: TGroupedIssues | undefined, projectId: string): boolean {
+    if (!groupedIssueIds) return false;
+
+    const flatIds = groupedIssueIds[ALL_ISSUES];
+    if (!Array.isArray(flatIds) || flatIds.length === 0) return true;
+
+    return flatIds.some((issueId) => this.rootIssueStore.issues.getIssueById(issueId)?.project_id === projectId);
+  }
 
   snapshotBeforeLinearNavigation = (projectId: string) => {
     if (!isLinearReadOnly()) return;
@@ -167,8 +184,25 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     const cached = this.linearProjectIssueCache.get(projectId);
     if (!cached) return false;
 
+    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
+    const groupedIssueIds = this.normalizeLinearProjectGroupedIssueIds(
+      cloneDeep(cached.groupedIssueIds)
+    ) as TGroupedIssues;
+
+    if (
+      !hasLinearGroupedIssueData(
+        groupedIssueIds,
+        displayFilters?.layout,
+        displayFilters?.group_by as GroupByColumnTypes | null
+      ) ||
+      !this.hasResolvedProjectIssuesInMap(groupedIssueIds, projectId)
+    ) {
+      this.linearProjectIssueCache.delete(projectId);
+      return false;
+    }
+
     runInAction(() => {
-      this.groupedIssueIds = cloneDeep(cached.groupedIssueIds);
+      this.groupedIssueIds = groupedIssueIds;
       this.groupedIssueCount = cloneDeep(cached.groupedIssueCount);
       this.issuePaginationData = cloneDeep(cached.issuePaginationData);
       this.paginationOptions = cached.paginationOptions ? { ...cached.paginationOptions } : undefined;
@@ -295,7 +329,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       this.cacheCurrentProjectIssues(this.loadedProjectId);
     }
 
-    const preserveIssueList = !isProjectSwitch && !!this.groupedIssueIds;
+    const preserveIssueList = this.loadedProjectId === projectId && this.isProjectDataReady(projectId);
 
     const sequence = this.beginFetch(loadType, !isExistingPaginationOptions, preserveIssueList);
 
