@@ -163,6 +163,16 @@ export function hasLinearGroupedIssueData(
     });
   }
 
+  if (layout === EIssueLayoutTypes.LIST && groupBy) {
+    const flatIds = groupedIssueIds[ALL_ISSUES];
+    if (Array.isArray(flatIds) && flatIds.length > 0) return true;
+
+    return groupKeys.some((key) => {
+      const bucket = groupedIssueIds[key];
+      return Array.isArray(bucket) && bucket.length > 0;
+    });
+  }
+
   const flatIds = groupedIssueIds[ALL_ISSUES];
   if (Array.isArray(flatIds) && flatIds.length > 0) return true;
 

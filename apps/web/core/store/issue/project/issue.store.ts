@@ -227,11 +227,12 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
         return;
       }
       if (this.restoreCachedProjectIssues(projectId)) {
-        this.bumpFetchSequence();
-        runInAction(() => {
-          this.setLoader(undefined);
-        });
-        return;
+        if (this.isProjectDataReady(projectId)) {
+          runInAction(() => {
+            this.setLoader(undefined);
+          });
+          return;
+        }
       }
 
       const inflight = this.linearInflightFetches.get(projectId);

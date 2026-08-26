@@ -5,7 +5,7 @@
  */
 
 import type { FC } from "react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 // plane constants
@@ -18,7 +18,7 @@ import {
   type TGroupedIssues,
   type TIssueKanbanFilters,
 } from "@plane/types";
-import { decodeRouteProjectId, isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { decodeRouteProjectId, groupLinearIssuesFromFlatList, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // constants
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
@@ -100,22 +100,49 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
   const { updateFilters } = useIssuesActions(storeType);
   const collapsedGroups =
     issueFiltersForView?.kanbanFilters || ({ group_by: [], sub_group_by: [] } as TIssueKanbanFilters);
+  const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly();
+  const issueLoader = issues.getIssueLoader();
 
   useEffect(() => {
     if (!displayFilters || !workspaceSlugStr || !routeProjectId) return;
-    if (storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && issues.isProjectDataReady(routeProjectId)) {
+    if (isLinearProject && issues.isProjectDataReady(routeProjectId)) {
       return;
     }
-    fetchIssues("init-loader", { canGroup: true, perPageCount: group_by ? 50 : 100 }, viewId);
-  }, [fetchIssues, storeType, group_by, viewId, layout, displayFilters, workspaceSlugStr, routeProjectId, issues]);
+    fetchIssues(
+      "init-loader",
+      {
+        canGroup: !isLinearProject,
+        perPageCount: isLinearProject ? 100 : group_by ? 50 : 100,
+      },
+      viewId
+    );
+  }, [
+    fetchIssues,
+    storeType,
+    group_by,
+    viewId,
+    layout,
+    displayFilters,
+    workspaceSlugStr,
+    routeProjectId,
+    issues,
+    issues.groupedIssueIds,
+    issueLoader,
+    isLinearProject,
+  ]);
 
-  const isLinearProjectLoading =
-    storeType === EIssuesStoreType.PROJECT &&
-    isLinearReadOnly() &&
-    routeProjectId &&
-    !issues.isProjectDataReady(routeProjectId);
+  const isLinearProjectLoading = isLinearProject && routeProjectId && !issues.isProjectDataReady(routeProjectId);
 
-  const groupedIssueIds = issues?.groupedIssueIds as TGroupedIssues | undefined;
+  const listGroupedIssueIds = useMemo(() => {
+    const raw = issues?.groupedIssueIds as TGroupedIssues | undefined;
+    if (!raw) return undefined;
+    if (isLinearProject && group_by) {
+      return groupLinearIssuesFromFlatList(raw, issueMap, group_by);
+    }
+    return raw;
+  }, [isLinearProject, group_by, issues?.groupedIssueIds, issueMap]);
+
+  const groupedIssueIds = listGroupedIssueIds;
   // auth
   const isEditingAllowed = allowPermissions(
     [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
