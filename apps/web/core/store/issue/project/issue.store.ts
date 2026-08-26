@@ -21,7 +21,7 @@ import type {
   TIssuePaginationData,
   GroupByColumnTypes,
 } from "@plane/types";
-// helpers
+import { EIssueLayoutTypes } from "@plane/types";
 // base class
 import type { IBaseIssuesStore } from "../helpers/base-issues.store";
 import { BaseIssuesStore } from "../helpers/base-issues.store";
@@ -32,6 +32,7 @@ import {
   isLinearReadOnly,
   LINEAR_READ_ONLY_VIEW_FLAGS,
   hasLinearGroupedIssueData,
+  groupLinearIssuesFromFlatList,
 } from "@/helpers/linear-display.helper";
 
 /** Immutable backend payload for a project — survives navigation until page refresh or explicit refetch. */
@@ -101,9 +102,24 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     }
 
     const snapshot = this.linearProjectSnapshots.get(projectId);
-    if (!snapshot) return false;
+    if (!snapshot || !this.isValidSnapshotRecord(snapshot, projectId)) return false;
 
-    return this.isValidSnapshotRecord(snapshot, projectId);
+    const groupedIssueIds = this.groupedIssueIds;
+    if (!groupedIssueIds) return false;
+
+    const flatIds = groupedIssueIds[ALL_ISSUES];
+    if (!Array.isArray(flatIds) || flatIds.length === 0) return false;
+
+    if (!flatIds.every((issueId) => this.rootIssueStore.issues.getIssueById(issueId))) {
+      return false;
+    }
+
+    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
+    return hasLinearGroupedIssueData(
+      groupedIssueIds as TGroupedIssues,
+      displayFilters?.layout,
+      displayFilters?.group_by as GroupByColumnTypes | null
+    );
   };
 
   /** Validate snapshot payload itself — do not depend on issueMap hydration. */
@@ -139,7 +155,10 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
     if (mergedIds.length === 0) return groupedIssueIds as TGroupedIssues;
 
-    return { [ALL_ISSUES]: [...new Set(mergedIds)] };
+    return {
+      ...(groupedIssueIds as TGroupedIssues),
+      [ALL_ISSUES]: [...new Set(mergedIds)],
+    };
   }
 
   private isValidSnapshotPayload(
@@ -178,13 +197,13 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     });
     this.storePreviousPaginationValues(response, options);
 
-    return {
+    return this.finalizeLinearSnapshot({
       groupedIssueIds: cloneDeep(groupedIssueIds),
       groupedIssueCount: cloneDeep(groupedIssueCount),
       issuePaginationData: cloneDeep(this.issuePaginationData),
       paginationOptions: this.paginationOptions ? { ...this.paginationOptions } : undefined,
       issues: cloneDeep(issueList),
-    };
+    });
   }
 
   private remountActiveSnapshot() {
@@ -201,14 +220,51 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     this.linearProjectSnapshots.set(projectId, snapshot);
   }
 
+  private buildLinearDisplayCounts(groupedIssueIds: TGroupedIssues): TGroupedIssueCount {
+    const counts: TGroupedIssueCount = {};
+    const flatIds = groupedIssueIds[ALL_ISSUES];
+    if (Array.isArray(flatIds)) {
+      counts[ALL_ISSUES] = flatIds.length;
+    }
+    for (const [key, bucket] of Object.entries(groupedIssueIds)) {
+      if (key === ALL_ISSUES || !Array.isArray(bucket)) continue;
+      counts[key] = bucket.length;
+    }
+    return counts;
+  }
+
+  private finalizeLinearSnapshot(snapshot: TLinearProjectSnapshot): TLinearProjectSnapshot {
+    const groupedIssueIds = cloneDeep(snapshot.groupedIssueIds);
+    return {
+      ...snapshot,
+      groupedIssueIds,
+      groupedIssueCount: this.buildLinearDisplayCounts(groupedIssueIds),
+      issuePaginationData: {},
+    };
+  }
+
   private mountSnapshot(projectId: string, snapshot: TLinearProjectSnapshot) {
-    this.rootIssueStore.issues.addIssue(snapshot.issues);
+    const finalized = this.finalizeLinearSnapshot(snapshot);
+    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
+    const groupBy = (displayFilters?.group_by ?? "state") as GroupByColumnTypes;
+    const layout = displayFilters?.layout;
+    const issueMapFromSnapshot = Object.fromEntries(finalized.issues.map((issue) => [issue.id, issue]));
+
+    let groupedIssueIds = cloneDeep(finalized.groupedIssueIds);
+    if (
+      groupBy &&
+      (layout === EIssueLayoutTypes.KANBAN || layout === EIssueLayoutTypes.LIST) &&
+      Array.isArray(groupedIssueIds[ALL_ISSUES])
+    ) {
+      groupedIssueIds = groupLinearIssuesFromFlatList(groupedIssueIds, issueMapFromSnapshot, groupBy);
+    }
 
     runInAction(() => {
-      this.groupedIssueIds = cloneDeep(snapshot.groupedIssueIds);
-      this.groupedIssueCount = cloneDeep(snapshot.groupedIssueCount);
-      this.issuePaginationData = cloneDeep(snapshot.issuePaginationData);
-      this.paginationOptions = snapshot.paginationOptions ? { ...snapshot.paginationOptions } : undefined;
+      this.rootIssueStore.issues.addIssue(finalized.issues);
+      this.groupedIssueIds = groupedIssueIds;
+      this.groupedIssueCount = this.buildLinearDisplayCounts(groupedIssueIds);
+      this.issuePaginationData = {};
+      this.paginationOptions = finalized.paginationOptions ? { ...finalized.paginationOptions } : undefined;
       this.mountedSnapshotProjectId = projectId;
       this.setLoader(undefined);
     });
@@ -430,6 +486,10 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   };
 
   fetchNextIssues = async (workspaceSlug: string, projectId: string, groupId?: string, subGroupId?: string) => {
+    if (isLinearReadOnly()) {
+      return;
+    }
+
     const cursorObject = this.getPaginationData(groupId, subGroupId);
     if (!this.paginationOptions || (cursorObject && !cursorObject?.nextPageResults)) return;
 

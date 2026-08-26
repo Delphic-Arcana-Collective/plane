@@ -32,6 +32,7 @@ import { useWorkFlowFDragNDrop } from "@/components/workflow";
 import { useProjectState } from "@/hooks/store/use-project-state";
 import { useIntersectionObserver } from "@/hooks/use-intersection-observer";
 import { useIssuesStore } from "@/hooks/use-issue-layout-store";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 import type { TSelectionHelper } from "@/hooks/use-multiple-select";
 // local imports
 import { GroupDragOverlay } from "../group-drag-overlay";
@@ -124,9 +125,10 @@ export const ListGroup = observer(function ListGroup(props: Props) {
   useIntersectionObserver(containerRef, isPaginating ? null : intersectionElement, loadMoreIssues, `100% 0% 100% 0%`);
 
   const shouldLoadMore =
-    nextPageResults === undefined && groupIssueCount !== undefined && groupIssueIds
+    !isLinearReadOnly() &&
+    (nextPageResults === undefined && groupIssueCount !== undefined && groupIssueIds
       ? groupIssueIds.length < groupIssueCount
-      : !!nextPageResults;
+      : !!nextPageResults);
 
   const loadMore = isPaginating ? (
     <ListLoaderItemRow />

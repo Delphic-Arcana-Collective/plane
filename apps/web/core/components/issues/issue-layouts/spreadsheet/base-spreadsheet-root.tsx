@@ -151,7 +151,7 @@ export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: 
         quickAddCallback={quickAddIssue}
         enableQuickCreateIssue={enableQuickAdd}
         disableIssueCreation={!enableIssueCreation || !isEditingAllowed || isCompletedCycle}
-        canLoadMoreIssues={!!nextPageResults}
+        canLoadMoreIssues={!isLinearReadOnly() && !!nextPageResults}
         loadMoreIssues={fetchNextIssues}
         isEpic={isEpic}
       />

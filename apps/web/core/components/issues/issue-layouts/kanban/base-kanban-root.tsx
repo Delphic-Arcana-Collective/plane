@@ -5,7 +5,7 @@
  */
 
 import type { FC } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { combine } from "@atlaskit/pragmatic-drag-and-drop/combine";
 import { dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { autoScrollForElements } from "@atlaskit/pragmatic-drag-and-drop-auto-scroll/element";
@@ -14,7 +14,7 @@ import { useParams } from "next/navigation";
 import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import type { GroupByColumnTypes, TGroupedIssues } from "@plane/types";
 import { EIssueLayoutTypes, EIssueServiceType, EIssuesStoreType } from "@plane/types";
-import { decodeRouteProjectId, groupLinearIssuesFromFlatList, isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { decodeRouteProjectId, resolveLinearGroupedIssueIds, isLinearReadOnly } from "@/helpers/linear-display.helper";
 //hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
@@ -121,7 +121,14 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
     issueLoader,
   ]);
 
-  const kanbanGroupedIssueIds = useMemo(() => {
+  const isLinearKanbanReady =
+    storeType === EIssuesStoreType.PROJECT &&
+    isLinearReadOnly() &&
+    routeProjectId &&
+    "isProjectDataReady" in issues &&
+    issues.isProjectDataReady(routeProjectId);
+
+  const kanbanGroupedIssueIds = (() => {
     if (
       storeType === EIssuesStoreType.PROJECT &&
       isLinearReadOnly() &&
@@ -133,11 +140,17 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
     }
     const raw = issues?.groupedIssueIds;
     if (!raw) return {} as TGroupedIssues;
+    if (isLinearKanbanReady) {
+      return raw as TGroupedIssues;
+    }
     if (storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && group_by) {
-      return groupLinearIssuesFromFlatList(raw as TGroupedIssues, issueMap, group_by as GroupByColumnTypes);
+      return (
+        resolveLinearGroupedIssueIds(raw as TGroupedIssues, issueMap, group_by as GroupByColumnTypes) ??
+        ({} as TGroupedIssues)
+      );
     }
     return raw as TGroupedIssues;
-  }, [storeType, routeProjectId, issues, group_by, issueMap]);
+  })();
 
   const getKanbanGroupIssueCount = useCallback(
     (groupId: string | undefined, subGroupId: string | undefined, isSubGroupCumulative: boolean) => {

@@ -39,6 +39,17 @@ export function getLinearWorkspaceSlug(): string {
   return import.meta.env.VITE_LINEAR_WORKSPACE_SLUG || "delphic";
 }
 
+export function getBffBaseUrl(): string {
+  return import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+}
+
+/** How often the web app checks BFF for new Linear sync data. Match BFF CACHE_POLL_INTERVAL_MS. */
+export function getLinearSyncPollIntervalMs(): number {
+  const raw = import.meta.env.VITE_LINEAR_SYNC_POLL_INTERVAL_MS;
+  const parsed = raw ? Number(raw) : 3000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3000;
+}
+
 /** Decode URL-encoded project ids (e.g. linear-team:…). */
 export function decodeRouteProjectId(projectId: string | undefined): string | undefined {
   if (!projectId) return undefined;
@@ -128,7 +139,7 @@ export function groupLinearIssuesFromFlatList(
     return groupedIssueIds;
   }
 
-  const grouped: TGroupedIssues = {};
+  const grouped: TGroupedIssues = { [ALL_ISSUES]: flatIds };
   for (const issueId of flatIds) {
     const issue = issueMap[issueId];
     if (!issue) continue;
@@ -143,6 +154,15 @@ export function groupLinearIssuesFromFlatList(
   return grouped;
 }
 
+function hasNonEmptyGroupBuckets(groupedIssueIds: TGroupedIssues): boolean {
+  return Object.keys(groupedIssueIds)
+    .filter((key) => key !== ALL_ISSUES)
+    .some((key) => {
+      const bucket = groupedIssueIds[key];
+      return Array.isArray(bucket) && bucket.length > 0;
+    });
+}
+
 /** Whether the store has issue ids usable for the active layout (avoids false "ready" on empty kanban). */
 export function hasLinearGroupedIssueData(
   groupedIssueIds: TGroupedIssues | undefined,
@@ -151,14 +171,14 @@ export function hasLinearGroupedIssueData(
 ): boolean {
   if (!groupedIssueIds) return false;
 
-  const groupKeys = Object.keys(groupedIssueIds).filter((key) => key !== ALL_ISSUES);
-
   if (layout === EIssueLayoutTypes.KANBAN && groupBy) {
+    if (hasNonEmptyGroupBuckets(groupedIssueIds)) return true;
     const flatIds = groupedIssueIds[ALL_ISSUES];
     return Array.isArray(flatIds) && flatIds.length > 0;
   }
 
   if (layout === EIssueLayoutTypes.LIST && groupBy) {
+    if (hasNonEmptyGroupBuckets(groupedIssueIds)) return true;
     const flatIds = groupedIssueIds[ALL_ISSUES];
     return Array.isArray(flatIds) && flatIds.length > 0;
   }
@@ -166,14 +186,31 @@ export function hasLinearGroupedIssueData(
   const flatIds = groupedIssueIds[ALL_ISSUES];
   if (Array.isArray(flatIds) && flatIds.length > 0) return true;
 
-  return groupKeys.some((key) => {
+  return hasNonEmptyGroupBuckets(groupedIssueIds);
+}
+
+/** Prefer store pre-grouped buckets; fall back to client grouping from ALL_ISSUES + issueMap. */
+export function resolveLinearGroupedIssueIds(
+  groupedIssueIds: TGroupedIssues | undefined,
+  issueMap: IIssueMap,
+  groupBy: GroupByColumnTypes | null
+): TGroupedIssues | undefined {
+  if (!groupedIssueIds) return undefined;
+  if (!groupBy) return groupedIssueIds;
+
+  const hasPreGrouped = Object.keys(groupedIssueIds).some((key) => {
+    if (key === ALL_ISSUES) return false;
     const bucket = groupedIssueIds[key];
     return Array.isArray(bucket) && bucket.length > 0;
   });
+  if (hasPreGrouped) return groupedIssueIds;
+
+  return groupLinearIssuesFromFlatList(groupedIssueIds, issueMap, groupBy);
 }
 
-export function getBffBaseUrl(): string {
-  return import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+/** Linear fetches a single flat page — no pagination UI. */
+export function shouldShowLinearIssuePagination(): boolean {
+  return false;
 }
 
 /** BFF maps Linear comment.parent → Plane comment.parent (not in core types yet). */

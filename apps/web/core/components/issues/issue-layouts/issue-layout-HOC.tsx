@@ -58,13 +58,9 @@ export const IssueLayoutHOC = observer(function IssueLayoutHOC(props: Props) {
     storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && "isProjectDataReady" in issues;
 
   if (isLinearProject) {
-    if (!routeProjectId || !issues.isProjectDataReady(routeProjectId)) {
+    const ready = !!routeProjectId && issues.isProjectDataReady(routeProjectId);
+    if (!ready) {
       return <LinearProjectIssuesLoader />;
-    }
-
-    const issueCount = issues.getGroupIssueCount(undefined, undefined, false);
-    if (issueCount === 0 && layout !== EIssueLayoutTypes.CALENDAR) {
-      return <IssueLayoutEmptyState storeType={storeType} />;
     }
 
     return <LayoutErrorBoundary key={layout}>{props.children}</LayoutErrorBoundary>;

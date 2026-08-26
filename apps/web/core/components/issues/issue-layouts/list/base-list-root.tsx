@@ -5,7 +5,7 @@
  */
 
 import type { FC } from "react";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 // plane constants
@@ -18,7 +18,7 @@ import {
   type TGroupedIssues,
   type TIssueKanbanFilters,
 } from "@plane/types";
-import { decodeRouteProjectId, groupLinearIssuesFromFlatList, isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { decodeRouteProjectId, resolveLinearGroupedIssueIds, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // constants
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
@@ -132,7 +132,10 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
     issues,
   ]);
 
-  const listGroupedIssueIds = useMemo(() => {
+  const isLinearProjectReady =
+    isLinearProject && routeProjectId && "isProjectDataReady" in issues && issues.isProjectDataReady(routeProjectId);
+
+  const listGroupedIssueIds = (() => {
     if (
       isLinearProject &&
       routeProjectId &&
@@ -143,11 +146,14 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
     }
     const raw = issues?.groupedIssueIds as TGroupedIssues | undefined;
     if (!raw) return undefined;
+    if (isLinearProjectReady) {
+      return raw;
+    }
     if (isLinearProject && group_by) {
-      return groupLinearIssuesFromFlatList(raw, issueMap, group_by);
+      return resolveLinearGroupedIssueIds(raw, issueMap, group_by);
     }
     return raw;
-  }, [isLinearProject, routeProjectId, issues, group_by, issueMap]);
+  })();
 
   const groupedIssueIds = listGroupedIssueIds;
 
