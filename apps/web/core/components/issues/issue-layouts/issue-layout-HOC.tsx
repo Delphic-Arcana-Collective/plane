@@ -55,7 +55,8 @@ export const IssueLayoutHOC = observer(function IssueLayoutHOC(props: Props) {
 
   const isLinearProject =
     storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && "isProjectDataReady" in issues;
-  const isLinearProjectDisplayReady = !isLinearProject || !routeProjectId || issues.isProjectDataReady(routeProjectId);
+  const isLinearProjectDisplayReady =
+    !isLinearProject || (!!routeProjectId && issues.isProjectDataReady(routeProjectId));
 
   const issueCount = isLinearProjectDisplayReady ? issues.getGroupIssueCount(undefined, undefined, false) : undefined;
 
