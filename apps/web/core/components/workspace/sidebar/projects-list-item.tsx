@@ -281,7 +281,7 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
     if (isLinearMode) {
       event?.preventDefault();
       if (isProjectSelected) {
-        projectIssues.snapshotBeforeLinearNavigation();
+        projectIssues.snapshotBeforeLinearNavigation(projectId);
         router.push(linearAllIssuesUrl);
       } else {
         workspaceIssues.snapshotBeforeLinearNavigation();

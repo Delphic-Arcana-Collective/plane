@@ -69,7 +69,7 @@ export interface IProjectIssues extends IBaseIssuesStore {
   archiveBulkIssues: (workspaceSlug: string, projectId: string, issueIds: string[]) => Promise<void>;
   bulkUpdateProperties: (workspaceSlug: string, projectId: string, data: TBulkOperationsPayload) => Promise<void>;
   isProjectDataReady: (projectId: string) => boolean;
-  snapshotBeforeLinearNavigation: () => void;
+  snapshotBeforeLinearNavigation: (projectId: string) => void;
 }
 
 export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
@@ -94,11 +94,30 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     );
   };
 
-  snapshotBeforeLinearNavigation = () => {
-    if (!isLinearReadOnly() || !this.loadedProjectId || !this.groupedIssueIds) return;
-    this.cacheCurrentProjectIssues(this.loadedProjectId);
+  snapshotBeforeLinearNavigation = (projectId: string) => {
+    if (!isLinearReadOnly()) return;
+    if (this.loadedProjectId !== projectId || !this.isProjectDataReady(projectId)) return;
+    this.cacheCurrentProjectIssues(projectId);
     this.bumpFetchSequence();
   };
+
+  /** Flatten grouped buckets so cache restores work across List/Kanban layouts. */
+  private normalizeLinearProjectGroupedIssueIds(
+    groupedIssueIds: TGroupedIssues | TSubGroupedIssues
+  ): TGroupedIssues | TSubGroupedIssues {
+    const flatIds = groupedIssueIds[ALL_ISSUES];
+    if (Array.isArray(flatIds) && flatIds.length > 0) {
+      return groupedIssueIds;
+    }
+
+    const mergedIds = Object.entries(groupedIssueIds)
+      .filter(([key]) => key !== ALL_ISSUES)
+      .flatMap(([, bucket]) => (Array.isArray(bucket) ? bucket : []));
+
+    if (mergedIds.length === 0) return groupedIssueIds;
+
+    return { [ALL_ISSUES]: [...new Set(mergedIds)] };
+  }
 
   private commitActiveProject(projectId: string) {
     this.activeProjectId = projectId;
@@ -137,7 +156,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     if (!isLinearReadOnly() || !this.groupedIssueIds) return;
 
     this.linearProjectIssueCache.set(projectId, {
-      groupedIssueIds: cloneDeep(this.groupedIssueIds),
+      groupedIssueIds: cloneDeep(this.normalizeLinearProjectGroupedIssueIds(this.groupedIssueIds)),
       groupedIssueCount: cloneDeep(this.groupedIssueCount),
       issuePaginationData: cloneDeep(this.issuePaginationData),
       paginationOptions: this.paginationOptions ? { ...this.paginationOptions } : undefined,
