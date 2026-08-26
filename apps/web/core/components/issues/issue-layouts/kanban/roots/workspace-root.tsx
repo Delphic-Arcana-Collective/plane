@@ -43,7 +43,7 @@ export const WorkspaceKanbanRoot = observer(function WorkspaceKanbanRoot(props: 
 
   const {
     issuesFilter: { filters, updateFilters },
-    issues: { getIssueLoader, groupedIssueIds, getGroupIssueCount },
+    issues: { getIssueLoader, groupedIssueIds, getGroupIssueCount, isViewDataReady },
   } = useIssues(EIssuesStoreType.GLOBAL);
   const { updateIssue, removeIssue, archiveIssue, fetchNextIssues } = useIssuesActions(EIssuesStoreType.GLOBAL);
   const { allowPermissions } = useUserPermissions();
@@ -150,7 +150,12 @@ export const WorkspaceKanbanRoot = observer(function WorkspaceKanbanRoot(props: 
     );
   }, []);
 
-  if ((isLoading && issuesLoading && getIssueLoader() === "init-loader") || !globalViewId || !groupedIssueIds) {
+  if (
+    (isLoading && issuesLoading && getIssueLoader() === "init-loader") ||
+    !globalViewId ||
+    (isLinearAllIssuesView(globalViewId) && !isViewDataReady(globalViewId)) ||
+    (!isLinearAllIssuesView(globalViewId) && !groupedIssueIds)
+  ) {
     return <KanbanLayoutLoader />;
   }
 

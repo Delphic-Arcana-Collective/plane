@@ -27,6 +27,8 @@ import { Tooltip } from "@plane/propel/tooltip";
 import { CustomMenu, DropIndicator, DragHandle, ControlLink } from "@plane/ui";
 import { cn } from "@plane/utils";
 import { getLinearAllIssuesPath, isLinearDisplayMode, isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { EIssuesStoreType } from "@plane/types";
+import { useIssues } from "@/hooks/store/use-issues";
 // components
 import { DEFAULT_TAB_KEY, getTabUrl } from "@/components/navigation/tab-navigation-utils";
 import { useTabPreferences } from "@/components/navigation/use-tab-preferences";
@@ -73,6 +75,8 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   // store hooks
   const { t } = useTranslation();
   const { getPartialProjectById } = useProject();
+  const { issues: projectIssues } = useIssues(EIssuesStoreType.PROJECT);
+  const { issues: workspaceIssues } = useIssues(EIssuesStoreType.GLOBAL);
   const { isMobile } = usePlatformOS();
   const { allowPermissions } = useUserPermissions();
   const { getIsProjectListOpen, toggleProjectListOpen } = useCommandPalette();
@@ -277,8 +281,10 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
     if (isLinearMode) {
       event?.preventDefault();
       if (isProjectSelected) {
+        projectIssues.snapshotBeforeLinearNavigation();
         router.push(linearAllIssuesUrl);
       } else {
+        workspaceIssues.snapshotBeforeLinearNavigation();
         router.push(linearIssuesUrl);
       }
       if (isExtendedProjectSidebarOpened) {

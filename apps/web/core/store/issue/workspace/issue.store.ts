@@ -4,7 +4,8 @@
  * See the LICENSE file for details.
  */
 
-import { action, makeObservable } from "mobx";
+import { action, makeObservable, observable, runInAction } from "mobx";
+import { cloneDeep } from "lodash-es";
 // base class
 import type {
   IssuePaginationOptions,
@@ -13,10 +14,14 @@ import type {
   TIssuesResponse,
   TLoader,
   ViewFlags,
+  TGroupedIssues,
+  TSubGroupedIssues,
+  TGroupedIssueCount,
+  TIssuePaginationData,
 } from "@plane/types";
 // services
 import { WorkspaceService } from "@/services/workspace.service";
-import { isLinearAllIssuesView } from "@/helpers/linear-display.helper";
+import { isLinearAllIssuesView, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // types
 import type { IBaseIssuesStore } from "../helpers/base-issues.store";
 import { BaseIssuesStore } from "../helpers/base-issues.store";
@@ -54,6 +59,8 @@ export interface IWorkspaceIssues extends IBaseIssuesStore {
 
   quickAddIssue: undefined;
   clear(): void;
+  isViewDataReady: (viewId: string) => boolean;
+  snapshotBeforeLinearNavigation: () => void;
 }
 
 export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues {
@@ -62,6 +69,77 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
     enableIssueCreation: true,
     enableInlineEditing: true,
   };
+  activeViewId: string | null = null;
+  private linearViewIssueCache = new Map<
+    string,
+    {
+      groupedIssueIds: TGroupedIssues | TSubGroupedIssues;
+      groupedIssueCount: TGroupedIssueCount;
+      issuePaginationData: TIssuePaginationData;
+      paginationOptions: IssuePaginationOptions | undefined;
+    }
+  >();
+
+  isViewDataReady = (viewId: string): boolean =>
+    isLinearAllIssuesView(viewId) && this.activeViewId === viewId && !!this.groupedIssueIds;
+
+  snapshotBeforeLinearNavigation = () => {
+    if (!this.activeViewId || !isLinearAllIssuesView(this.activeViewId) || !this.groupedIssueIds) return;
+    this.cacheViewIssues(this.activeViewId);
+    this.bumpFetchSequence();
+  };
+
+  protected override beginFetch(
+    loadType: TLoader,
+    shouldClearPaginationOptions: boolean,
+    preserveIssueList = false
+  ): number {
+    if (!isLinearReadOnly()) {
+      return super.beginFetch(loadType, shouldClearPaginationOptions, preserveIssueList);
+    }
+
+    const sequence = ++this.fetchSequence;
+    runInAction(() => {
+      this.setLoader(loadType);
+      if (!preserveIssueList) {
+        this.groupedIssueIds = undefined;
+        this.issuePaginationData = {};
+        this.groupedIssueCount = {};
+      }
+      if (shouldClearPaginationOptions) {
+        this.paginationOptions = undefined;
+      }
+    });
+    return sequence;
+  }
+
+  private cacheViewIssues(viewId: string) {
+    if (!this.groupedIssueIds) return;
+    this.linearViewIssueCache.set(viewId, {
+      groupedIssueIds: cloneDeep(this.groupedIssueIds),
+      groupedIssueCount: cloneDeep(this.groupedIssueCount),
+      issuePaginationData: cloneDeep(this.issuePaginationData),
+      paginationOptions: this.paginationOptions ? { ...this.paginationOptions } : undefined,
+    });
+  }
+
+  private restoreCachedViewIssues(viewId: string): boolean {
+    const cached = this.linearViewIssueCache.get(viewId);
+    if (!cached) return false;
+
+    runInAction(() => {
+      this.groupedIssueIds = cloneDeep(cached.groupedIssueIds);
+      this.groupedIssueCount = cloneDeep(cached.groupedIssueCount);
+      this.issuePaginationData = cloneDeep(cached.issuePaginationData);
+      this.paginationOptions = cached.paginationOptions ? { ...cached.paginationOptions } : undefined;
+      this.activeViewId = viewId;
+    });
+    return true;
+  }
+
+  private rejectStaleViewResponse(sequence: number, viewId: string): boolean {
+    return this.isStaleFetch(sequence) || this.activeViewId !== viewId;
+  }
   // service
   workspaceService;
   // filterStore
@@ -71,10 +149,12 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
     super(_rootStore, issueFilterStore);
 
     makeObservable(this, {
+      activeViewId: observable,
       // action
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,
+      snapshotBeforeLinearNavigation: action,
     });
     // services
     this.workspaceService = new WorkspaceService();
@@ -102,7 +182,27 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
     options: IssuePaginationOptions,
     isExistingPaginationOptions: boolean = false
   ) => {
-    const preserveIssueList = isLinearAllIssuesView(viewId) && !!this.groupedIssueIds;
+    const isLinearAll = isLinearAllIssuesView(viewId);
+
+    if (isLinearAll) {
+      this.activeViewId = viewId;
+    }
+
+    if (isLinearAll && !isExistingPaginationOptions) {
+      if (this.isViewDataReady(viewId)) {
+        this.bumpFetchSequence();
+        return;
+      }
+      if (this.restoreCachedViewIssues(viewId)) {
+        this.bumpFetchSequence();
+        runInAction(() => {
+          this.setLoader(undefined);
+        });
+        return;
+      }
+    }
+
+    const preserveIssueList = isLinearAll && !!this.groupedIssueIds;
     const sequence = this.beginFetch(loadType, !isExistingPaginationOptions, preserveIssueList);
 
     try {
@@ -110,16 +210,21 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
       const params = this.issueFilterStore?.getFilterParams(options, viewId, undefined, undefined, undefined);
       // call the fetch issues API with the params
       const response = await this.workspaceService.getViewIssues(workspaceSlug, params, {
-        signal: this.controller.signal,
+        signal: isLinearAll ? undefined : this.controller.signal,
       });
 
-      if (this.isStaleFetch(sequence)) return;
+      if (isLinearAll && this.rejectStaleViewResponse(sequence, viewId)) return;
+      if (!isLinearAll && this.isStaleFetch(sequence)) return;
 
       // after fetching issues, call the base method to process the response further
       this.onfetchIssues(response, options, workspaceSlug, undefined, undefined, !isExistingPaginationOptions);
+      if (isLinearAll) {
+        this.cacheViewIssues(viewId);
+      }
       return response;
     } catch (error) {
-      if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
+      if ((isLinearAll && this.rejectStaleViewResponse(sequence, viewId)) || this.isAbortError(error)) return;
+      if (!isLinearAll && this.isStaleFetch(sequence)) return;
       // set loader to undefined if errored out
       this.setLoader(undefined);
       throw error;
@@ -181,6 +286,9 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
    */
   fetchIssuesWithExistingPagination = async (workspaceSlug: string, viewId: string, loadType: TLoader) => {
     if (!this.paginationOptions) return;
+    if (isLinearAllIssuesView(viewId)) {
+      this.linearViewIssueCache.delete(viewId);
+    }
     return await this.fetchIssues(workspaceSlug, viewId, loadType, this.paginationOptions, true);
   };
 

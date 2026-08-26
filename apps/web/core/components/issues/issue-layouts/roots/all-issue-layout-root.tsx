@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import { observer } from "mobx-react";
 import { useParams, useSearchParams } from "next/navigation";
 import useSWR from "swr";
@@ -45,7 +45,7 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
   const {
     issuesFilter,
     issuesFilter: { filters, fetchFilters, updateFilterExpression },
-    issues: { clear, groupedIssueIds, fetchIssues, fetchNextIssues },
+    issues: { clear, groupedIssueIds, fetchIssues, fetchNextIssues, isViewDataReady },
   } = useIssues(EIssuesStoreType.GLOBAL);
   const { fetchAllGlobalViews, getViewDetailsById } = useGlobalView();
   // Derived values
@@ -99,11 +99,14 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
     { revalidateIfStale: false, revalidateOnFocus: false }
   );
 
-  // Fetch issues
+  // Fetch issues — SWR runs once per workspace view; linear mode uses in-memory cache on navigation.
   const { isLoading: issuesLoading } = useSWR(
     workspaceSlug && globalViewId ? `WORKSPACE_GLOBAL_VIEW_ISSUES_${workspaceSlug}_${globalViewId}` : null,
     async () => {
       if (workspaceSlug && globalViewId) {
+        if (isLinearAllIssuesView(globalViewId) && isViewDataReady(globalViewId)) {
+          return;
+        }
         if (!isLinearAllIssuesView(globalViewId) || !groupedIssueIds) {
           clear();
         }
@@ -131,6 +134,35 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
     },
     { revalidateIfStale: false, revalidateOnFocus: false }
   );
+
+  // Linear all-issues: refetch on navigation when SWR cache is stale but MobX store is empty.
+  useEffect(() => {
+    if (!workspaceSlug || !globalViewId || !isLinearAllIssues) return;
+    if (isViewDataReady(globalViewId)) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      await fetchFilters(workspaceSlug, globalViewId);
+      if (cancelled) return;
+
+      const displayFilters = issuesFilter.getIssueFilters(globalViewId)?.displayFilters;
+      const layout = displayFilters?.layout;
+
+      if (layout === EIssueLayoutTypes.CALENDAR || layout === EIssueLayoutTypes.GANTT) {
+        return;
+      }
+
+      await fetchIssues(workspaceSlug, globalViewId, "init-loader", {
+        canGroup: false,
+        perPageCount: 100,
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceSlug, globalViewId, isLinearAllIssues, isViewDataReady, fetchFilters, fetchIssues, issuesFilter]);
 
   // Empty state
   if (!isLoading && !globalViewsLoading && !issuesLoading && !viewDetails && !isDefaultView) {

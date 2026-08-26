@@ -5,6 +5,7 @@
  */
 
 import { action, computed, makeObservable, observable, runInAction } from "mobx";
+import { cloneDeep } from "lodash-es";
 // types
 import type {
   TIssue,
@@ -63,6 +64,7 @@ export interface IProjectIssues extends IBaseIssuesStore {
   archiveBulkIssues: (workspaceSlug: string, projectId: string, issueIds: string[]) => Promise<void>;
   bulkUpdateProperties: (workspaceSlug: string, projectId: string, data: TBulkOperationsPayload) => Promise<void>;
   isProjectDataReady: (projectId: string) => boolean;
+  snapshotBeforeLinearNavigation: () => void;
 }
 
 export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
@@ -72,9 +74,26 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   issueFilterStore: IProjectIssuesFilter;
   /** Project id for the issues currently loaded in groupedIssueIds. */
   loadedProjectId: string | null = null;
+  /** Project id the UI is currently showing — guards against stale in-flight responses. */
+  activeProjectId: string | null = null;
   private linearProjectIssueCache = new Map<string, TLinearProjectIssueCache>();
 
-  isProjectDataReady = (projectId: string): boolean => this.loadedProjectId === projectId && !!this.groupedIssueIds;
+  isProjectDataReady = (projectId: string): boolean => this.activeProjectId === projectId && !!this.groupedIssueIds;
+
+  snapshotBeforeLinearNavigation = () => {
+    if (!isLinearReadOnly() || !this.loadedProjectId || !this.groupedIssueIds) return;
+    this.cacheCurrentProjectIssues(this.loadedProjectId);
+    this.bumpFetchSequence();
+  };
+
+  private commitActiveProject(projectId: string) {
+    this.activeProjectId = projectId;
+    this.loadedProjectId = projectId;
+  }
+
+  private rejectStaleProjectResponse(sequence: number, projectId: string): boolean {
+    return this.isStaleFetch(sequence) || this.activeProjectId !== projectId;
+  }
 
   protected override beginFetch(
     loadType: TLoader,
@@ -104,10 +123,10 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     if (!isLinearReadOnly() || !this.groupedIssueIds) return;
 
     this.linearProjectIssueCache.set(projectId, {
-      groupedIssueIds: this.groupedIssueIds,
-      groupedIssueCount: { ...this.groupedIssueCount },
-      issuePaginationData: { ...this.issuePaginationData },
-      paginationOptions: this.paginationOptions,
+      groupedIssueIds: cloneDeep(this.groupedIssueIds),
+      groupedIssueCount: cloneDeep(this.groupedIssueCount),
+      issuePaginationData: cloneDeep(this.issuePaginationData),
+      paginationOptions: this.paginationOptions ? { ...this.paginationOptions } : undefined,
     });
   }
 
@@ -116,11 +135,11 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     if (!cached) return false;
 
     runInAction(() => {
-      this.groupedIssueIds = cached.groupedIssueIds;
-      this.groupedIssueCount = cached.groupedIssueCount;
-      this.issuePaginationData = cached.issuePaginationData;
-      this.paginationOptions = cached.paginationOptions;
-      this.loadedProjectId = projectId;
+      this.groupedIssueIds = cloneDeep(cached.groupedIssueIds);
+      this.groupedIssueCount = cloneDeep(cached.groupedIssueCount);
+      this.issuePaginationData = cloneDeep(cached.issuePaginationData);
+      this.paginationOptions = cached.paginationOptions ? { ...cached.paginationOptions } : undefined;
+      this.commitActiveProject(projectId);
     });
     return true;
   }
@@ -142,9 +161,11 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     makeObservable(this, {
       viewFlags: computed,
       loadedProjectId: observable,
+      activeProjectId: observable,
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,
+      snapshotBeforeLinearNavigation: action,
 
       quickAddIssue: action,
     });
@@ -185,11 +206,15 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     const isLinearMode = isLinearReadOnly();
     const isProjectSwitch = this.loadedProjectId !== null && this.loadedProjectId !== projectId;
 
+    this.activeProjectId = projectId;
+
     if (isLinearMode && !isExistingPaginationOptions) {
       if (this.isProjectDataReady(projectId)) {
+        this.bumpFetchSequence();
         return;
       }
       if (this.restoreCachedProjectIssues(projectId)) {
+        this.bumpFetchSequence();
         runInAction(() => {
           this.setLoader(undefined);
         });
@@ -213,17 +238,17 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
         signal: isLinearMode ? undefined : this.controller.signal,
       });
 
-      if (this.isStaleFetch(sequence)) return;
+      if (this.rejectStaleProjectResponse(sequence, projectId)) return;
 
       // after fetching issues, call the base method to process the response further
       this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
       runInAction(() => {
-        this.loadedProjectId = projectId;
+        this.commitActiveProject(projectId);
       });
       this.cacheCurrentProjectIssues(projectId);
       return response;
     } catch (error) {
-      if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
+      if (this.rejectStaleProjectResponse(sequence, projectId) || this.isAbortError(error)) return;
       // set loader to undefined if errored out
       this.setLoader(undefined);
       throw error;
