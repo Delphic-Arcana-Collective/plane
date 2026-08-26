@@ -41,6 +41,12 @@ type TLinearProjectIssueCache = {
   paginationOptions: IssuePaginationOptions | undefined;
 };
 
+type TLinearInflightFetch = {
+  projectId: string;
+  generation: number;
+  promise: Promise<TIssuesResponse | undefined>;
+};
+
 export interface IProjectIssues extends IBaseIssuesStore {
   viewFlags: ViewFlags;
   // action
@@ -80,13 +86,24 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   issueFilterStore: IProjectIssuesFilter;
   /** Project id for the issues currently loaded in groupedIssueIds. */
   loadedProjectId: string | null = null;
-  /** Project id the UI is currently showing — guards against stale in-flight responses. */
+  /** Project id the UI route is showing. */
   activeProjectId: string | null = null;
+  /** Monotonic session counter — bumps on project change or leaving project view. */
+  activeGeneration = 0;
+  /** Generation that produced the current loadedProjectId data. */
+  loadedGeneration = 0;
   private linearProjectIssueCache = new Map<string, TLinearProjectIssueCache>();
-  private linearInflightFetches = new Map<string, Promise<TIssuesResponse | undefined>>();
+  private linearInflightFetch: TLinearInflightFetch | null = null;
 
   isProjectDataReady = (projectId: string): boolean => {
-    if (this.activeProjectId !== projectId || this.loadedProjectId !== projectId) return false;
+    if (
+      this.activeProjectId !== projectId ||
+      this.loadedProjectId !== projectId ||
+      this.loadedGeneration !== this.activeGeneration
+    ) {
+      return false;
+    }
+
     const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
     const groupedIssueIds = this.groupedIssueIds as TGroupedIssues | undefined;
     if (
@@ -111,12 +128,50 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     return flatIds.some((issueId) => this.rootIssueStore.issues.getIssueById(issueId)?.project_id === projectId);
   }
 
+  /** Invalidate in-flight work when leaving a project — no timing, generation mismatch only. */
+  private invalidateProjectSession = () => {
+    this.activeGeneration += 1;
+    runInAction(() => {
+      this.activeProjectId = null;
+      this.loadedProjectId = null;
+      this.loadedGeneration = 0;
+      this.groupedIssueIds = undefined;
+      this.issuePaginationData = {};
+      this.groupedIssueCount = {};
+      this.setLoader(undefined);
+    });
+  };
+
   snapshotBeforeLinearNavigation = (projectId: string) => {
     if (!isLinearReadOnly()) return;
-    if (this.loadedProjectId !== projectId || !this.isProjectDataReady(projectId)) return;
-    this.cacheCurrentProjectIssues(projectId);
-    this.bumpFetchSequence();
+    if (this.loadedProjectId === projectId && this.isProjectDataReady(projectId)) {
+      this.cacheCurrentProjectIssues(projectId);
+    }
+    this.invalidateProjectSession();
   };
+
+  private activateProject = (projectId: string) => {
+    if (this.activeProjectId === projectId) return;
+
+    this.activeProjectId = projectId;
+    this.activeGeneration += 1;
+    runInAction(() => {
+      this.loadedProjectId = null;
+      this.loadedGeneration = 0;
+      this.groupedIssueIds = undefined;
+      this.issuePaginationData = {};
+      this.groupedIssueCount = {};
+      this.setLoader("init-loader");
+    });
+  };
+
+  private commitProjectLoad = (projectId: string, generation: number) => {
+    this.loadedProjectId = projectId;
+    this.loadedGeneration = generation;
+  };
+
+  private isFetchGenerationCurrent = (projectId: string, generation: number): boolean =>
+    this.activeProjectId === projectId && this.activeGeneration === generation;
 
   /** Flatten grouped buckets so cache restores work across List/Kanban layouts. */
   private normalizeLinearProjectGroupedIssueIds(
@@ -134,15 +189,6 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     if (mergedIds.length === 0) return groupedIssueIds;
 
     return { [ALL_ISSUES]: [...new Set(mergedIds)] };
-  }
-
-  private commitActiveProject(projectId: string) {
-    this.activeProjectId = projectId;
-    this.loadedProjectId = projectId;
-  }
-
-  private rejectStaleProjectResponse(sequence: number, projectId: string): boolean {
-    return this.isStaleFetch(sequence) || this.activeProjectId !== projectId;
   }
 
   protected override beginFetch(
@@ -180,7 +226,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     });
   }
 
-  private restoreCachedProjectIssues(projectId: string): boolean {
+  private restoreCachedProjectIssues(projectId: string, generation: number): boolean {
     const cached = this.linearProjectIssueCache.get(projectId);
     if (!cached) return false;
 
@@ -206,7 +252,8 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       this.groupedIssueCount = cloneDeep(cached.groupedIssueCount);
       this.issuePaginationData = cloneDeep(cached.issuePaginationData);
       this.paginationOptions = cached.paginationOptions ? { ...cached.paginationOptions } : undefined;
-      this.commitActiveProject(projectId);
+      this.commitProjectLoad(projectId, generation);
+      this.setLoader(undefined);
     });
     return true;
   }
@@ -229,6 +276,8 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       viewFlags: computed,
       loadedProjectId: observable,
       activeProjectId: observable,
+      activeGeneration: observable,
+      loadedGeneration: observable,
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,
@@ -271,44 +320,49 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     isExistingPaginationOptions: boolean = false
   ) => {
     const isLinearMode = isLinearReadOnly();
-    const isProjectSwitch = this.loadedProjectId !== null && this.loadedProjectId !== projectId;
 
-    this.activeProjectId = projectId;
-
-    if (isLinearMode && !isExistingPaginationOptions) {
-      if (this.isProjectDataReady(projectId)) {
-        return;
-      }
-      if (this.restoreCachedProjectIssues(projectId)) {
-        if (this.isProjectDataReady(projectId)) {
-          runInAction(() => {
-            this.setLoader(undefined);
-          });
-          return;
-        }
-      }
-
-      const inflight = this.linearInflightFetches.get(projectId);
-      if (inflight) {
-        return inflight;
-      }
+    if (!isLinearMode) {
+      return this.runLegacyFetchIssues(workspaceSlug, projectId, loadType, options, isExistingPaginationOptions);
     }
 
-    const fetchPromise = this.runFetchIssues(
+    if (!isExistingPaginationOptions) {
+      this.activateProject(projectId);
+    }
+
+    const generation = this.activeGeneration;
+
+    if (this.isProjectDataReady(projectId)) {
+      return;
+    }
+
+    if (!isExistingPaginationOptions && this.restoreCachedProjectIssues(projectId, generation)) {
+      return;
+    }
+
+    const inflight = this.linearInflightFetch;
+    if (
+      inflight &&
+      inflight.projectId === projectId &&
+      inflight.generation === generation &&
+      !isExistingPaginationOptions
+    ) {
+      return inflight.promise;
+    }
+
+    const fetchPromise = this.runLinearFetchIssues(
       workspaceSlug,
       projectId,
       loadType,
       options,
       isExistingPaginationOptions,
-      isLinearMode,
-      isProjectSwitch
+      generation
     );
 
-    if (isLinearMode && !isExistingPaginationOptions) {
-      this.linearInflightFetches.set(projectId, fetchPromise);
+    if (!isExistingPaginationOptions) {
+      this.linearInflightFetch = { projectId, generation, promise: fetchPromise };
       void fetchPromise.finally(() => {
-        if (this.linearInflightFetches.get(projectId) === fetchPromise) {
-          this.linearInflightFetches.delete(projectId);
+        if (this.linearInflightFetch?.promise === fetchPromise) {
+          this.linearInflightFetch = null;
         }
       });
     }
@@ -316,65 +370,74 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     return fetchPromise;
   };
 
-  private runFetchIssues = async (
-    workspaceSlug: string,
-    projectId: string,
-    loadType: TLoader,
-    options: IssuePaginationOptions,
-    isExistingPaginationOptions: boolean,
-    isLinearMode: boolean,
-    isProjectSwitch: boolean
-  ) => {
-    if (isLinearMode && isProjectSwitch && this.loadedProjectId && this.groupedIssueIds) {
-      this.cacheCurrentProjectIssues(this.loadedProjectId);
-    }
-
-    const preserveIssueList = this.loadedProjectId === projectId && this.isProjectDataReady(projectId);
-
-    const sequence = this.beginFetch(loadType, !isExistingPaginationOptions, preserveIssueList);
-
-    try {
-      const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
-      const response = await this.issueService.getIssues(workspaceSlug, projectId, params, {
-        signal: isLinearMode ? undefined : this.controller.signal,
-      });
-
-      if (this.rejectStaleProjectResponse(sequence, projectId)) {
-        this.scheduleProjectFetchRetry(workspaceSlug, projectId, loadType, options, isExistingPaginationOptions);
-        return;
-      }
-
-      this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
-      runInAction(() => {
-        this.commitActiveProject(projectId);
-      });
-      this.cacheCurrentProjectIssues(projectId);
-      return response;
-    } catch (error) {
-      if (this.rejectStaleProjectResponse(sequence, projectId) || this.isAbortError(error)) {
-        this.scheduleProjectFetchRetry(workspaceSlug, projectId, loadType, options, isExistingPaginationOptions);
-        return;
-      }
-      this.setLoader(undefined);
-      throw error;
-    }
-  };
-
-  private scheduleProjectFetchRetry = (
+  private runLegacyFetchIssues = async (
     workspaceSlug: string,
     projectId: string,
     loadType: TLoader,
     options: IssuePaginationOptions,
     isExistingPaginationOptions: boolean
   ) => {
-    if (!isLinearReadOnly()) return;
-    if (this.activeProjectId !== projectId || this.isProjectDataReady(projectId)) return;
-    if (this.linearInflightFetches.has(projectId)) return;
+    const isProjectSwitch = this.loadedProjectId !== null && this.loadedProjectId !== projectId;
+    const sequence = this.beginFetch(
+      loadType,
+      !isExistingPaginationOptions,
+      !isProjectSwitch && !!this.groupedIssueIds
+    );
 
-    queueMicrotask(() => {
-      if (this.activeProjectId !== projectId || this.isProjectDataReady(projectId)) return;
-      void this.fetchIssues(workspaceSlug, projectId, loadType, options, isExistingPaginationOptions);
-    });
+    try {
+      const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
+      const response = await this.issueService.getIssues(workspaceSlug, projectId, params, {
+        signal: this.controller.signal,
+      });
+
+      if (this.isStaleFetch(sequence)) return;
+
+      this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
+      runInAction(() => {
+        this.loadedProjectId = projectId;
+      });
+      return response;
+    } catch (error) {
+      if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
+      this.setLoader(undefined);
+      throw error;
+    }
+  };
+
+  private runLinearFetchIssues = async (
+    workspaceSlug: string,
+    projectId: string,
+    loadType: TLoader,
+    options: IssuePaginationOptions,
+    isExistingPaginationOptions: boolean,
+    generation: number
+  ) => {
+    this.beginFetch(loadType, !isExistingPaginationOptions, false);
+
+    try {
+      const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
+      const response = await this.issueService.getIssues(workspaceSlug, projectId, params, {
+        signal: undefined,
+      });
+
+      if (!this.isFetchGenerationCurrent(projectId, generation)) {
+        return;
+      }
+
+      this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
+      runInAction(() => {
+        this.commitProjectLoad(projectId, generation);
+        this.setLoader(undefined);
+      });
+      this.cacheCurrentProjectIssues(projectId);
+      return response;
+    } catch (error) {
+      if (!this.isFetchGenerationCurrent(projectId, generation) || this.isAbortError(error)) {
+        return;
+      }
+      this.setLoader(undefined);
+      throw error;
+    }
   };
 
   /**
@@ -392,6 +455,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     // if there are no pagination options and the next page results do not exist the return
     if (!this.paginationOptions || (cursorObject && !cursorObject?.nextPageResults)) return;
 
+    const generation = this.activeGeneration;
     const sequence = this.bumpFetchSequence();
 
     try {
@@ -409,13 +473,21 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       // call the fetch issues API with the params for next page in issues
       const response = await this.issueService.getIssues(workspaceSlug, projectId, params);
 
-      if (this.isStaleFetch(sequence)) return;
+      if (isLinearReadOnly()) {
+        if (!this.isFetchGenerationCurrent(projectId, generation)) return;
+      } else if (this.isStaleFetch(sequence)) {
+        return;
+      }
 
       // after the next page of issues are fetched, call the base method to process the response
       this.onfetchNexIssues(response, groupId, subGroupId);
       return response;
     } catch (error) {
-      if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
+      if (isLinearReadOnly()) {
+        if (!this.isFetchGenerationCurrent(projectId, generation) || this.isAbortError(error)) return;
+      } else if (this.isStaleFetch(sequence) || this.isAbortError(error)) {
+        return;
+      }
       // set Loader as undefined if errored out
       this.setLoader(undefined, groupId, subGroupId);
       throw error;
