@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 // plane constants
-import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
+import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel, ALL_ISSUES } from "@plane/constants";
 // types
 import {
   EIssueLayoutTypes,
@@ -143,6 +143,44 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
   }, [isLinearProject, group_by, issues?.groupedIssueIds, issueMap]);
 
   const groupedIssueIds = listGroupedIssueIds;
+
+  const hasVisibleListIssues = useMemo(() => {
+    if (!isLinearProject || !listGroupedIssueIds) return true;
+
+    if (!group_by) {
+      const ids = listGroupedIssueIds[ALL_ISSUES];
+      return Array.isArray(ids) && ids.some((id) => Boolean(issueMap[id]));
+    }
+
+    return Object.entries(listGroupedIssueIds).some(
+      ([key, bucket]) => key !== ALL_ISSUES && Array.isArray(bucket) && bucket.some((id) => Boolean(issueMap[id]))
+    );
+  }, [isLinearProject, listGroupedIssueIds, group_by, issueMap]);
+
+  // Recover from false-ready state: header says loaded but List groups are empty.
+  useEffect(() => {
+    if (!isLinearProject || !routeProjectId || !displayFilters || !workspaceSlugStr || isLinearProjectLoading) {
+      return;
+    }
+    if (hasVisibleListIssues) return;
+
+    const timer = window.setTimeout(() => {
+      if (hasVisibleListIssues) return;
+      fetchIssues("init-loader", { canGroup: false, perPageCount: 100 }, viewId);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    fetchIssues,
+    routeProjectId,
+    isLinearProject,
+    hasVisibleListIssues,
+    isLinearProjectLoading,
+    displayFilters,
+    workspaceSlugStr,
+    viewId,
+  ]);
+
   // auth
   const isEditingAllowed = allowPermissions(
     [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
