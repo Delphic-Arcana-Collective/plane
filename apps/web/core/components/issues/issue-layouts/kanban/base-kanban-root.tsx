@@ -12,8 +12,8 @@ import { autoScrollForElements } from "@atlaskit/pragmatic-drag-and-drop-auto-sc
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
-import type { EIssuesStoreType } from "@plane/types";
-import { EIssueServiceType, EIssueLayoutTypes } from "@plane/types";
+import { EIssueServiceType, EIssueLayoutTypes, EIssuesStoreType } from "@plane/types";
+import { decodeRouteProjectId, isLinearReadOnly } from "@/helpers/linear-display.helper";
 //hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
@@ -32,6 +32,7 @@ import type { IQuickActionProps, TRenderQuickActions } from "../list/list-view-t
 import { getSourceFromDropPayload } from "../utils";
 import { KanBan } from "./default";
 import { KanBanSwimLanes } from "./swimlanes";
+import { KanbanLayoutLoader } from "@/components/ui/loader/layouts/kanban-layout-loader";
 
 export type KanbanStoreType =
   | EIssuesStoreType.PROJECT
@@ -62,7 +63,8 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
     isEpic = false,
   } = props;
   // router
-  const { workspaceSlug, projectId } = useParams();
+  const { workspaceSlug, projectId: routeProjectIdParam } = useParams();
+  const routeProjectId = decodeRouteProjectId(routeProjectIdParam?.toString());
   // store hooks
   const storeType = useIssueStoreType() as KanbanStoreType;
   const { allowPermissions } = useUserPermissions();
@@ -96,8 +98,22 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
   const orderBy = displayFilters?.order_by;
 
   useEffect(() => {
+    if (
+      storeType === EIssuesStoreType.PROJECT &&
+      isLinearReadOnly() &&
+      routeProjectId &&
+      issues.isProjectDataReady(routeProjectId)
+    ) {
+      return;
+    }
     fetchIssues("init-loader", { canGroup: true, perPageCount: sub_group_by ? 10 : 30 }, viewId);
-  }, [fetchIssues, storeType, group_by, sub_group_by, viewId]);
+  }, [fetchIssues, storeType, group_by, sub_group_by, viewId, routeProjectId, issues]);
+
+  const isLinearProjectLoading =
+    storeType === EIssuesStoreType.PROJECT &&
+    isLinearReadOnly() &&
+    routeProjectId &&
+    !issues.isProjectDataReady(routeProjectId);
 
   const fetchMoreIssues = useCallback(
     (groupId?: string, subgroupId?: string) => {
@@ -105,7 +121,7 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
         fetchNextIssues(groupId, subgroupId);
       }
     },
-    [fetchNextIssues]
+    [fetchNextIssues, issues]
   );
 
   const groupedIssueIds = issues?.groupedIssueIds;
@@ -223,15 +239,19 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
         } else {
           collapsedGroups.push(value);
         }
-        updateFilters(projectId?.toString() ?? "", EIssueFilterType.KANBAN_FILTERS, {
+        updateFilters(routeProjectId ?? "", EIssueFilterType.KANBAN_FILTERS, {
           [toggle]: collapsedGroups,
         });
       }
     },
-    [workspaceSlug, issuesFilter, projectId, updateFilters]
+    [workspaceSlug, issuesFilter, routeProjectId, updateFilters]
   );
 
   const collapsedGroups = issuesFilter?.issueFilters?.kanbanFilters || { group_by: [], sub_group_by: [] };
+
+  if (isLinearProjectLoading) {
+    return <KanbanLayoutLoader />;
+  }
 
   return (
     <>

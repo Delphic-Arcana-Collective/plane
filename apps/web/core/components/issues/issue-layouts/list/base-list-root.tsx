@@ -18,7 +18,7 @@ import {
   type TGroupedIssues,
   type TIssueKanbanFilters,
 } from "@plane/types";
-import { decodeRouteProjectId } from "@/helpers/linear-display.helper";
+import { decodeRouteProjectId, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // constants
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
@@ -30,6 +30,7 @@ import { useIssuesActions } from "@/hooks/use-issues-actions";
 // components
 import { IssueLayoutHOC } from "../issue-layout-HOC";
 import { List } from "./default";
+import { ListLayoutLoader } from "@/components/ui/loader/layouts/list-layout-loader";
 // types
 import type { IQuickActionProps, TRenderQuickActions } from "./list-view-types";
 
@@ -102,8 +103,17 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
 
   useEffect(() => {
     if (!displayFilters || !workspaceSlugStr || !routeProjectId) return;
+    if (storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && issues.isProjectDataReady(routeProjectId)) {
+      return;
+    }
     fetchIssues("init-loader", { canGroup: true, perPageCount: group_by ? 50 : 100 }, viewId);
-  }, [fetchIssues, storeType, group_by, viewId, layout, displayFilters, workspaceSlugStr, routeProjectId]);
+  }, [fetchIssues, storeType, group_by, viewId, layout, displayFilters, workspaceSlugStr, routeProjectId, issues]);
+
+  const isLinearProjectLoading =
+    storeType === EIssuesStoreType.PROJECT &&
+    isLinearReadOnly() &&
+    routeProjectId &&
+    !issues.isProjectDataReady(routeProjectId);
 
   const groupedIssueIds = issues?.groupedIssueIds as TGroupedIssues | undefined;
   // auth
@@ -168,6 +178,10 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
     },
     [workspaceSlugStr, issueFiltersForView, routeProjectId, updateFilters]
   );
+
+  if (isLinearProjectLoading) {
+    return <ListLayoutLoader />;
+  }
 
   return (
     <IssueLayoutHOC layout={EIssueLayoutTypes.LIST}>

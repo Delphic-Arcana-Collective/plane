@@ -62,6 +62,7 @@ export interface IProjectIssues extends IBaseIssuesStore {
   removeBulkIssues: (workspaceSlug: string, projectId: string, issueIds: string[]) => Promise<void>;
   archiveBulkIssues: (workspaceSlug: string, projectId: string, issueIds: string[]) => Promise<void>;
   bulkUpdateProperties: (workspaceSlug: string, projectId: string, data: TBulkOperationsPayload) => Promise<void>;
+  isProjectDataReady: (projectId: string) => boolean;
 }
 
 export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
@@ -72,6 +73,32 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   /** Project id for the issues currently loaded in groupedIssueIds. */
   loadedProjectId: string | null = null;
   private linearProjectIssueCache = new Map<string, TLinearProjectIssueCache>();
+
+  isProjectDataReady = (projectId: string): boolean => this.loadedProjectId === projectId && !!this.groupedIssueIds;
+
+  protected override beginFetch(
+    loadType: TLoader,
+    shouldClearPaginationOptions: boolean,
+    preserveIssueList = false
+  ): number {
+    if (!isLinearReadOnly()) {
+      return super.beginFetch(loadType, shouldClearPaginationOptions, preserveIssueList);
+    }
+
+    const sequence = ++this.fetchSequence;
+    runInAction(() => {
+      this.setLoader(loadType);
+      if (!preserveIssueList) {
+        this.groupedIssueIds = undefined;
+        this.issuePaginationData = {};
+        this.groupedIssueCount = {};
+      }
+      if (shouldClearPaginationOptions) {
+        this.paginationOptions = undefined;
+      }
+    });
+    return sequence;
+  }
 
   private cacheCurrentProjectIssues(projectId: string) {
     if (!isLinearReadOnly() || !this.groupedIssueIds) return;
@@ -158,12 +185,23 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     const isLinearMode = isLinearReadOnly();
     const isProjectSwitch = this.loadedProjectId !== null && this.loadedProjectId !== projectId;
 
+    if (isLinearMode && !isExistingPaginationOptions) {
+      if (this.isProjectDataReady(projectId)) {
+        return;
+      }
+      if (this.restoreCachedProjectIssues(projectId)) {
+        runInAction(() => {
+          this.setLoader(undefined);
+        });
+        return;
+      }
+    }
+
     if (isLinearMode && isProjectSwitch && this.loadedProjectId && this.groupedIssueIds) {
       this.cacheCurrentProjectIssues(this.loadedProjectId);
     }
 
-    const restoredFromCache = isLinearMode && isProjectSwitch && this.restoreCachedProjectIssues(projectId);
-    const preserveIssueList = restoredFromCache || (!isProjectSwitch && !!this.groupedIssueIds);
+    const preserveIssueList = isLinearMode ? !!this.groupedIssueIds : !isProjectSwitch && !!this.groupedIssueIds;
 
     const sequence = this.beginFetch(loadType, !isExistingPaginationOptions, preserveIssueList);
 
@@ -172,7 +210,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
       // call the fetch issues API with the params
       const response = await this.issueService.getIssues(workspaceSlug, projectId, params, {
-        signal: this.controller.signal,
+        signal: isLinearMode ? undefined : this.controller.signal,
       });
 
       if (this.isStaleFetch(sequence)) return;
@@ -250,7 +288,14 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     projectId: string,
     loadType: TLoader = "mutation"
   ) => {
-    if (!this.paginationOptions || this.loadedProjectId !== projectId) return;
+    if (!this.paginationOptions) return;
+
+    if (isLinearReadOnly()) {
+      this.linearProjectIssueCache.delete(projectId);
+      return await this.fetchIssues(workspaceSlug, projectId, loadType, this.paginationOptions, true);
+    }
+
+    if (this.loadedProjectId !== projectId) return;
     return await this.fetchIssues(workspaceSlug, projectId, loadType, this.paginationOptions, true);
   };
 

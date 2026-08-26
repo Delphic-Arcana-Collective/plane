@@ -10,8 +10,9 @@ import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 // plane imports
 import { ALL_ISSUES, EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
-import type { EIssuesStoreType, IIssueDisplayFilterOptions } from "@plane/types";
-import { EIssueLayoutTypes } from "@plane/types";
+import type { IIssueDisplayFilterOptions } from "@plane/types";
+import { EIssueLayoutTypes, EIssuesStoreType } from "@plane/types";
+import { decodeRouteProjectId, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
 import { useUserPermissions } from "@/hooks/store/user";
@@ -21,6 +22,7 @@ import { useIssuesActions } from "@/hooks/use-issues-actions";
 import { IssueLayoutHOC } from "../issue-layout-HOC";
 import type { IQuickActionProps, TRenderQuickActions } from "../list/list-view-types";
 import { SpreadsheetView } from "./spreadsheet-view";
+import { SpreadsheetLayoutLoader } from "@/components/ui/loader/layouts/spreadsheet-layout-loader";
 
 export type SpreadsheetStoreType =
   | EIssuesStoreType.PROJECT
@@ -42,7 +44,8 @@ interface IBaseSpreadsheetRoot {
 export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: IBaseSpreadsheetRoot) {
   const { QuickActions, canEditPropertiesBasedOnProject, isCompletedCycle = false, viewId, isEpic = false } = props;
   // router
-  const { projectId } = useParams();
+  const { projectId: routeProjectIdParam } = useParams();
+  const routeProjectId = decodeRouteProjectId(routeProjectIdParam?.toString());
   // store hooks
   const storeType = useIssueStoreType() as SpreadsheetStoreType;
   const { allowPermissions } = useUserPermissions();
@@ -67,8 +70,22 @@ export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: 
   );
 
   useEffect(() => {
+    if (
+      storeType === EIssuesStoreType.PROJECT &&
+      isLinearReadOnly() &&
+      routeProjectId &&
+      issues.isProjectDataReady(routeProjectId)
+    ) {
+      return;
+    }
     fetchIssues("init-loader", { canGroup: false, perPageCount: 100 }, viewId);
-  }, [fetchIssues, storeType, viewId]);
+  }, [fetchIssues, storeType, viewId, routeProjectId, issues]);
+
+  const isLinearProjectLoading =
+    storeType === EIssuesStoreType.PROJECT &&
+    isLinearReadOnly() &&
+    routeProjectId &&
+    !issues.isProjectDataReady(routeProjectId);
 
   const canEditProperties = useCallback(
     (projectId: string | undefined) => {
@@ -85,11 +102,11 @@ export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: 
 
   const handleDisplayFiltersUpdate = useCallback(
     (updatedDisplayFilter: Partial<IIssueDisplayFilterOptions>) => {
-      updateFilters(projectId?.toString() ?? "", EIssueFilterType.DISPLAY_FILTERS, {
+      updateFilters(routeProjectId ?? "", EIssueFilterType.DISPLAY_FILTERS, {
         ...updatedDisplayFilter,
       });
     },
-    [projectId, updateFilters]
+    [routeProjectId, updateFilters]
   );
 
   const renderQuickActions: TRenderQuickActions = useCallback(
@@ -108,8 +125,21 @@ export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: 
         placements={placement}
       />
     ),
-    [isCompletedCycle, canEditProperties, removeIssue, updateIssue, removeIssueFromView, archiveIssue, restoreIssue]
+    [
+      QuickActions,
+      isCompletedCycle,
+      canEditProperties,
+      removeIssue,
+      updateIssue,
+      removeIssueFromView,
+      archiveIssue,
+      restoreIssue,
+    ]
   );
+
+  if (isLinearProjectLoading) {
+    return <SpreadsheetLayoutLoader />;
+  }
 
   if (!Array.isArray(issueIds)) return null;
 
