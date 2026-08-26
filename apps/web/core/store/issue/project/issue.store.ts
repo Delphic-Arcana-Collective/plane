@@ -39,6 +39,7 @@ type TLinearProjectIssueCache = {
   groupedIssueCount: TGroupedIssueCount;
   issuePaginationData: TIssuePaginationData;
   paginationOptions: IssuePaginationOptions | undefined;
+  issues: TIssue[];
 };
 
 type TLinearInflightFetch = {
@@ -127,7 +128,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       if (flatIds.length === 0) return false;
       return flatIds.every((issueId) => {
         const issue = this.rootIssueStore.issues.getIssueById(issueId);
-        return !issue || issue.project_id === projectId;
+        return !!issue && issue.project_id === projectId;
       });
     }
 
@@ -137,9 +138,40 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
         if (!Array.isArray(bucket) || bucket.length === 0) return false;
         return bucket.every((issueId) => {
           const issue = this.rootIssueStore.issues.getIssueById(issueId);
-          return !issue || issue.project_id === projectId;
+          return !!issue && issue.project_id === projectId;
         });
       });
+  }
+
+  private collectIssuePayloadsFromGrouped(
+    groupedIssueIds: TGroupedIssues | TSubGroupedIssues,
+    projectId: string
+  ): TIssue[] {
+    const normalized = this.normalizeLinearProjectGroupedIssueIds(groupedIssueIds) as TGroupedIssues;
+    const flatIds = normalized[ALL_ISSUES];
+    if (!Array.isArray(flatIds)) return [];
+
+    const issues: TIssue[] = [];
+    for (const issueId of flatIds) {
+      const issue = this.rootIssueStore.issues.getIssueById(issueId);
+      if (issue && issue.project_id === projectId) {
+        issues.push(issue);
+      }
+    }
+    return issues;
+  }
+
+  private canCommitLinearProjectLoad(projectId: string, groupedIssueIds: TGroupedIssues | undefined): boolean {
+    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
+    return (
+      !!groupedIssueIds &&
+      hasLinearGroupedIssueData(
+        groupedIssueIds,
+        displayFilters?.layout,
+        displayFilters?.group_by as GroupByColumnTypes | null
+      ) &&
+      this.hasResolvedProjectIssuesInMap(groupedIssueIds, projectId)
+    );
   }
 
   /** Bump write generation when leaving project view — does not clear committed display data. */
@@ -232,17 +264,28 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   private cacheCurrentProjectIssues(projectId: string) {
     if (!isLinearReadOnly() || !this.groupedIssueIds) return;
 
+    const groupedIssueIds = this.normalizeLinearProjectGroupedIssueIds(this.groupedIssueIds) as TGroupedIssues;
+    if (!this.canCommitLinearProjectLoad(projectId, groupedIssueIds)) return;
+
+    const issues = this.collectIssuePayloadsFromGrouped(groupedIssueIds, projectId);
+    if (issues.length === 0) return;
+
     this.linearProjectIssueCache.set(projectId, {
-      groupedIssueIds: cloneDeep(this.normalizeLinearProjectGroupedIssueIds(this.groupedIssueIds)),
+      groupedIssueIds: cloneDeep(groupedIssueIds),
       groupedIssueCount: cloneDeep(this.groupedIssueCount),
       issuePaginationData: cloneDeep(this.issuePaginationData),
       paginationOptions: this.paginationOptions ? { ...this.paginationOptions } : undefined,
+      issues: cloneDeep(issues),
     });
   }
 
   private restoreCachedProjectIssues(projectId: string, generation: number): boolean {
     const cached = this.linearProjectIssueCache.get(projectId);
     if (!cached) return false;
+
+    if (cached.issues.length > 0) {
+      this.rootIssueStore.issues.addIssue(cached.issues);
+    }
 
     const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
     const groupedIssueIds = this.normalizeLinearProjectGroupedIssueIds(
@@ -349,10 +392,6 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       return;
     }
 
-    if (!isExistingPaginationOptions && this.restoreCachedProjectIssues(projectId, generation)) {
-      return;
-    }
-
     const inflight = this.linearInflightFetch;
     if (
       inflight &&
@@ -440,11 +479,25 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       }
 
       this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
+
       runInAction(() => {
+        const normalized = this.normalizeLinearProjectGroupedIssueIds(
+          this.groupedIssueIds as TGroupedIssues
+        ) as TGroupedIssues;
+        this.groupedIssueIds = normalized;
+
+        if (!this.canCommitLinearProjectLoad(projectId, normalized)) {
+          this.setLoader("init-loader");
+          return;
+        }
+
         this.commitProjectLoad(projectId, generation);
         this.setLoader(undefined);
       });
-      this.cacheCurrentProjectIssues(projectId);
+
+      if (this.isProjectDataReady(projectId)) {
+        this.cacheCurrentProjectIssues(projectId);
+      }
       return response;
     } catch (error) {
       if (!this.isFetchGenerationCurrent(projectId, generation) || this.isAbortError(error)) {

@@ -29,7 +29,7 @@ import { useProject } from "@/hooks/store/use-project";
 import { useUserPermissions } from "@/hooks/store/user";
 import { useAppRouter } from "@/hooks/use-app-router";
 import { usePlatformOS } from "@/hooks/use-platform-os";
-import { isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { isLinearReadOnly, decodeRouteProjectId } from "@/helpers/linear-display.helper";
 // plane web imports
 import { CommonProjectBreadcrumbs } from "@/components/breadcrumbs/common";
 
@@ -39,7 +39,7 @@ export const IssuesHeader = observer(function IssuesHeader() {
   const { workspaceSlug, projectId } = useParams();
   // store hooks
   const {
-    issues: { getGroupIssueCount },
+    issues: { getGroupIssueCount, isProjectDataReady },
   } = useIssues(EIssuesStoreType.PROJECT);
   // i18n
   const { t } = useTranslation();
@@ -55,7 +55,9 @@ export const IssuesHeader = observer(function IssuesHeader() {
     SPACE_BASE_PATH;
   const publishedURL = `${SPACE_APP_URL}/issues/${currentProjectDetails?.anchor}`;
 
-  const issuesCount = getGroupIssueCount(undefined, undefined, false);
+  const routeProjectId = decodeRouteProjectId(projectId?.toString());
+  const isLinearProjectReady = !isLinearReadOnly() || !routeProjectId || isProjectDataReady(routeProjectId);
+  const issuesCount = isLinearProjectReady ? getGroupIssueCount(undefined, undefined, false) : undefined;
   const canUserCreateIssue =
     !isLinearReadOnly() &&
     allowPermissions([EUserPermissions.ADMIN, EUserPermissions.MEMBER], EUserPermissionsLevel.PROJECT);

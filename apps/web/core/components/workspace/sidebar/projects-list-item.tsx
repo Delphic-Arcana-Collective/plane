@@ -284,6 +284,9 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
         projectIssues.snapshotBeforeLinearNavigation(projectId);
         router.push(linearAllIssuesUrl);
       } else {
+        if (activeProjectId && activeProjectId !== projectId) {
+          projectIssues.snapshotBeforeLinearNavigation(activeProjectId);
+        }
         workspaceIssues.snapshotBeforeLinearNavigation();
         router.push(linearIssuesUrl);
       }
