@@ -34,8 +34,9 @@ import {
   hasLinearGroupedIssueData,
 } from "@/helpers/linear-display.helper";
 
-type TLinearProjectIssueCache = {
-  groupedIssueIds: TGroupedIssues | TSubGroupedIssues;
+/** Immutable backend payload for a project — survives navigation until page refresh or explicit refetch. */
+type TLinearProjectSnapshot = {
+  groupedIssueIds: TGroupedIssues;
   groupedIssueCount: TGroupedIssueCount;
   issuePaginationData: TIssuePaginationData;
   paginationOptions: IssuePaginationOptions | undefined;
@@ -44,7 +45,6 @@ type TLinearProjectIssueCache = {
 
 type TLinearInflightFetch = {
   projectId: string;
-  generation: number;
   promise: Promise<TIssuesResponse | undefined>;
 };
 
@@ -83,238 +83,162 @@ export interface IProjectIssues extends IBaseIssuesStore {
 export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   router;
 
-  // filter store
   issueFilterStore: IProjectIssuesFilter;
-  /** Project id for the issues currently loaded in groupedIssueIds. */
-  loadedProjectId: string | null = null;
-  /** Project id the UI route is showing. */
+
+  /** Route project the UI is showing. */
   activeProjectId: string | null = null;
-  /** Monotonic session counter — bumps on project change or leaving project view. */
-  activeGeneration = 0;
-  /** Generation that produced the current loadedProjectId data. */
-  loadedGeneration = 0;
-  private linearProjectIssueCache = new Map<string, TLinearProjectIssueCache>();
+  /** Which project's snapshot is currently mounted into groupedIssueIds. */
+  mountedSnapshotProjectId: string | null = null;
+
+  /** Session-scoped backend snapshots — keyed by projectId, untouched by navigation. */
+  private linearProjectSnapshots = new Map<string, TLinearProjectSnapshot>();
   private linearInflightFetch: TLinearInflightFetch | null = null;
 
   isProjectDataReady = (projectId: string): boolean => {
-    if (
-      this.activeProjectId !== projectId ||
-      this.loadedProjectId !== projectId ||
-      this.loadedGeneration !== this.activeGeneration
-    ) {
+    if (this.activeProjectId !== projectId || this.mountedSnapshotProjectId !== projectId) {
       return false;
     }
 
-    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
-    const groupedIssueIds = this.groupedIssueIds as TGroupedIssues | undefined;
-    if (
-      !hasLinearGroupedIssueData(
-        groupedIssueIds,
-        displayFilters?.layout,
-        displayFilters?.group_by as GroupByColumnTypes | null
-      )
-    ) {
-      return false;
-    }
+    const snapshot = this.linearProjectSnapshots.get(projectId);
+    if (!snapshot) return false;
 
-    return this.hasResolvedProjectIssuesInMap(groupedIssueIds, projectId);
-  };
-
-  private hasResolvedProjectIssuesInMap(groupedIssueIds: TGroupedIssues | undefined, projectId: string): boolean {
-    if (!groupedIssueIds) return false;
-
-    const flatIds = groupedIssueIds[ALL_ISSUES];
-    if (Array.isArray(flatIds)) {
-      if (flatIds.length === 0) return false;
-      return flatIds.every((issueId) => {
-        const issue = this.rootIssueStore.issues.getIssueById(issueId);
-        return !!issue && issue.project_id === projectId;
-      });
-    }
-
-    return Object.entries(groupedIssueIds)
-      .filter(([key]) => key !== ALL_ISSUES)
-      .some(([, bucket]) => {
-        if (!Array.isArray(bucket) || bucket.length === 0) return false;
-        return bucket.every((issueId) => {
-          const issue = this.rootIssueStore.issues.getIssueById(issueId);
-          return !!issue && issue.project_id === projectId;
-        });
-      });
-  }
-
-  private collectIssuePayloadsFromGrouped(
-    groupedIssueIds: TGroupedIssues | TSubGroupedIssues,
-    projectId: string
-  ): TIssue[] {
-    const normalized = this.normalizeLinearProjectGroupedIssueIds(groupedIssueIds) as TGroupedIssues;
-    const flatIds = normalized[ALL_ISSUES];
-    if (!Array.isArray(flatIds)) return [];
-
-    const issues: TIssue[] = [];
-    for (const issueId of flatIds) {
-      const issue = this.rootIssueStore.issues.getIssueById(issueId);
-      if (issue && issue.project_id === projectId) {
-        issues.push(issue);
-      }
-    }
-    return issues;
-  }
-
-  private canCommitLinearProjectLoad(projectId: string, groupedIssueIds: TGroupedIssues | undefined): boolean {
     const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
     return (
-      !!groupedIssueIds &&
       hasLinearGroupedIssueData(
-        groupedIssueIds,
+        snapshot.groupedIssueIds,
         displayFilters?.layout,
         displayFilters?.group_by as GroupByColumnTypes | null
-      ) &&
-      this.hasResolvedProjectIssuesInMap(groupedIssueIds, projectId)
+      ) && this.snapshotIssuesResolved(snapshot, projectId)
     );
+  };
+
+  private snapshotIssuesResolved(snapshot: TLinearProjectSnapshot, projectId: string): boolean {
+    const flatIds = snapshot.groupedIssueIds[ALL_ISSUES];
+    if (!Array.isArray(flatIds) || flatIds.length === 0) return false;
+
+    const count = snapshot.groupedIssueCount[ALL_ISSUES];
+    if (typeof count === "number" && flatIds.length !== count) return false;
+
+    return flatIds.every((issueId) => {
+      const issue = this.rootIssueStore.issues.getIssueById(issueId);
+      return !!issue && issue.project_id === projectId;
+    });
   }
 
-  /** Bump write generation when leaving project view — does not clear committed display data. */
-  private invalidateProjectSession = () => {
-    this.activeGeneration += 1;
-    this.activeProjectId = null;
-    this.loadedProjectId = null;
-    this.loadedGeneration = 0;
-  };
-
-  snapshotBeforeLinearNavigation = (projectId: string) => {
-    if (!isLinearReadOnly()) return;
-    if (this.loadedProjectId === projectId && this.isProjectDataReady(projectId)) {
-      this.cacheCurrentProjectIssues(projectId);
-    }
-    this.invalidateProjectSession();
-  };
-
-  private activateProject = (projectId: string) => {
-    if (this.activeProjectId === projectId) return;
-
-    this.activeProjectId = projectId;
-    this.activeGeneration += 1;
-    const generation = this.activeGeneration;
-
-    if (this.restoreCachedProjectIssues(projectId, generation)) {
-      return;
-    }
-
-    runInAction(() => {
-      this.loadedProjectId = null;
-      this.loadedGeneration = 0;
-      this.groupedIssueIds = undefined;
-      this.issuePaginationData = {};
-      this.groupedIssueCount = {};
-      this.setLoader("init-loader");
-    });
-  };
-
-  private commitProjectLoad = (projectId: string, generation: number) => {
-    this.loadedProjectId = projectId;
-    this.loadedGeneration = generation;
-  };
-
-  private isFetchGenerationCurrent = (projectId: string, generation: number): boolean =>
-    this.activeProjectId === projectId && this.activeGeneration === generation;
-
-  /** Flatten grouped buckets so cache restores work across List/Kanban layouts. */
-  private normalizeLinearProjectGroupedIssueIds(
-    groupedIssueIds: TGroupedIssues | TSubGroupedIssues
-  ): TGroupedIssues | TSubGroupedIssues {
+  private normalizeLinearProjectGroupedIssueIds(groupedIssueIds: TGroupedIssues | TSubGroupedIssues): TGroupedIssues {
     const flatIds = groupedIssueIds[ALL_ISSUES];
     if (Array.isArray(flatIds) && flatIds.length > 0) {
-      return groupedIssueIds;
+      return groupedIssueIds as TGroupedIssues;
     }
 
     const mergedIds = Object.entries(groupedIssueIds)
       .filter(([key]) => key !== ALL_ISSUES)
       .flatMap(([, bucket]) => (Array.isArray(bucket) ? bucket : []));
 
-    if (mergedIds.length === 0) return groupedIssueIds;
+    if (mergedIds.length === 0) return groupedIssueIds as TGroupedIssues;
 
     return { [ALL_ISSUES]: [...new Set(mergedIds)] };
   }
 
-  protected override beginFetch(
-    loadType: TLoader,
-    shouldClearPaginationOptions: boolean,
-    preserveIssueList = false
-  ): number {
-    if (!isLinearReadOnly()) {
-      return super.beginFetch(loadType, shouldClearPaginationOptions, preserveIssueList);
-    }
+  private isValidSnapshotPayload(
+    projectId: string,
+    groupedIssueIds: TGroupedIssues,
+    groupedIssueCount: TGroupedIssueCount,
+    issueList: TIssue[]
+  ): boolean {
+    const flatIds = groupedIssueIds[ALL_ISSUES];
+    if (!Array.isArray(flatIds) || flatIds.length === 0) return false;
 
-    const sequence = ++this.fetchSequence;
-    runInAction(() => {
-      this.setLoader(loadType);
-      if (!preserveIssueList) {
-        this.groupedIssueIds = undefined;
-        this.issuePaginationData = {};
-        this.groupedIssueCount = {};
-      }
-      if (shouldClearPaginationOptions) {
-        this.paginationOptions = undefined;
-      }
-    });
-    return sequence;
-  }
+    const count = groupedIssueCount[ALL_ISSUES];
+    if (typeof count === "number" && flatIds.length !== count) return false;
 
-  private cacheCurrentProjectIssues(projectId: string) {
-    if (!isLinearReadOnly() || !this.groupedIssueIds) return;
-
-    const groupedIssueIds = this.normalizeLinearProjectGroupedIssueIds(this.groupedIssueIds) as TGroupedIssues;
-    if (!this.canCommitLinearProjectLoad(projectId, groupedIssueIds)) return;
-
-    const issues = this.collectIssuePayloadsFromGrouped(groupedIssueIds, projectId);
-    if (issues.length === 0) return;
-
-    this.linearProjectIssueCache.set(projectId, {
-      groupedIssueIds: cloneDeep(groupedIssueIds),
-      groupedIssueCount: cloneDeep(this.groupedIssueCount),
-      issuePaginationData: cloneDeep(this.issuePaginationData),
-      paginationOptions: this.paginationOptions ? { ...this.paginationOptions } : undefined,
-      issues: cloneDeep(issues),
-    });
-  }
-
-  private restoreCachedProjectIssues(projectId: string, generation: number): boolean {
-    const cached = this.linearProjectIssueCache.get(projectId);
-    if (!cached || !cached.issues?.length) {
-      if (cached) this.linearProjectIssueCache.delete(projectId);
-      return false;
-    }
-
-    this.rootIssueStore.issues.addIssue(cached.issues);
+    if (!issueList.every((issue) => issue.project_id === projectId)) return false;
 
     const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
-    const groupedIssueIds = this.normalizeLinearProjectGroupedIssueIds(
-      cloneDeep(cached.groupedIssueIds)
-    ) as TGroupedIssues;
+    return hasLinearGroupedIssueData(
+      groupedIssueIds,
+      displayFilters?.layout,
+      displayFilters?.group_by as GroupByColumnTypes | null
+    );
+  }
 
-    if (
-      !hasLinearGroupedIssueData(
-        groupedIssueIds,
-        displayFilters?.layout,
-        displayFilters?.group_by as GroupByColumnTypes | null
-      ) ||
-      !this.hasResolvedProjectIssuesInMap(groupedIssueIds, projectId)
-    ) {
-      this.linearProjectIssueCache.delete(projectId);
-      return false;
+  private createSnapshotFromFetch(
+    projectId: string,
+    response: TIssuesResponse,
+    options: IssuePaginationOptions,
+    groupedIssueIds: TGroupedIssues,
+    groupedIssueCount: TGroupedIssueCount,
+    issueList: TIssue[]
+  ): TLinearProjectSnapshot {
+    runInAction(() => {
+      this.groupedIssueIds = groupedIssueIds;
+      this.groupedIssueCount = groupedIssueCount;
+    });
+    this.storePreviousPaginationValues(response, options);
+
+    return {
+      groupedIssueIds: cloneDeep(groupedIssueIds),
+      groupedIssueCount: cloneDeep(groupedIssueCount),
+      issuePaginationData: cloneDeep(this.issuePaginationData),
+      paginationOptions: this.paginationOptions ? { ...this.paginationOptions } : undefined,
+      issues: cloneDeep(issueList),
+    };
+  }
+
+  private remountActiveSnapshot() {
+    const projectId = this.activeProjectId;
+    if (!projectId) return;
+
+    const snapshot = this.linearProjectSnapshots.get(projectId);
+    if (snapshot) {
+      this.mountSnapshot(projectId, snapshot);
+    }
+  }
+
+  private saveSnapshot(projectId: string, snapshot: TLinearProjectSnapshot) {
+    this.linearProjectSnapshots.set(projectId, snapshot);
+  }
+
+  private mountSnapshot(projectId: string, snapshot: TLinearProjectSnapshot) {
+    this.rootIssueStore.issues.addIssue(snapshot.issues);
+
+    runInAction(() => {
+      this.groupedIssueIds = cloneDeep(snapshot.groupedIssueIds);
+      this.groupedIssueCount = cloneDeep(snapshot.groupedIssueCount);
+      this.issuePaginationData = cloneDeep(snapshot.issuePaginationData);
+      this.paginationOptions = snapshot.paginationOptions ? { ...snapshot.paginationOptions } : undefined;
+      this.mountedSnapshotProjectId = projectId;
+      this.setLoader(undefined);
+    });
+  }
+
+  private activateProject = (projectId: string) => {
+    this.activeProjectId = projectId;
+
+    const snapshot = this.linearProjectSnapshots.get(projectId);
+    if (snapshot && this.snapshotIssuesResolved(snapshot, projectId)) {
+      this.mountSnapshot(projectId, snapshot);
+      return;
+    }
+
+    if (snapshot) {
+      this.linearProjectSnapshots.delete(projectId);
     }
 
     runInAction(() => {
-      this.groupedIssueIds = groupedIssueIds;
-      this.groupedIssueCount = cloneDeep(cached.groupedIssueCount);
-      this.issuePaginationData = cloneDeep(cached.issuePaginationData);
-      this.paginationOptions = cached.paginationOptions ? { ...cached.paginationOptions } : undefined;
-      this.commitProjectLoad(projectId, generation);
-      this.setLoader(undefined);
+      this.mountedSnapshotProjectId = null;
+      this.setLoader("init-loader");
     });
-    return true;
-  }
+  };
+
+  /** Leaving project view — only clears the active pointer; snapshots stay in memory. */
+  snapshotBeforeLinearNavigation = (_projectId: string) => {
+    if (!isLinearReadOnly()) return;
+    runInAction(() => {
+      this.activeProjectId = null;
+      this.mountedSnapshotProjectId = null;
+    });
+  };
 
   get viewFlags(): ViewFlags {
     if (isLinearReadOnly()) {
@@ -332,44 +256,26 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     super(_rootStore, issueFilterStore);
     makeObservable(this, {
       viewFlags: computed,
-      loadedProjectId: observable,
       activeProjectId: observable,
-      activeGeneration: observable,
-      loadedGeneration: observable,
+      mountedSnapshotProjectId: observable,
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,
       snapshotBeforeLinearNavigation: action,
-
       quickAddIssue: action,
     });
-    // filter store
     this.issueFilterStore = issueFilterStore;
     this.router = _rootStore.rootStore.router;
   }
 
-  /**
-   * Fetches the project details
-   * @param workspaceSlug
-   * @param projectId
-   */
   fetchParentStats = async (workspaceSlug: string, projectId?: string) => {
     if (projectId) {
       await this.rootIssueStore.rootStore.projectRoot.project.fetchProjectDetails(workspaceSlug, projectId);
     }
   };
 
-  /** */
   updateParentStats = () => {};
 
-  /**
-   * This method is called to fetch the first issues of pagination
-   * @param workspaceSlug
-   * @param projectId
-   * @param loadType
-   * @param options
-   * @returns
-   */
   fetchIssues = async (
     workspaceSlug: string,
     projectId: string,
@@ -377,9 +283,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     options: IssuePaginationOptions,
     isExistingPaginationOptions: boolean = false
   ) => {
-    const isLinearMode = isLinearReadOnly();
-
-    if (!isLinearMode) {
+    if (!isLinearReadOnly()) {
       return this.runLegacyFetchIssues(workspaceSlug, projectId, loadType, options, isExistingPaginationOptions);
     }
 
@@ -387,19 +291,16 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       this.activateProject(projectId);
     }
 
-    const generation = this.activeGeneration;
-
-    if (this.isProjectDataReady(projectId)) {
+    if (this.linearProjectSnapshots.has(projectId)) {
+      const snapshot = this.linearProjectSnapshots.get(projectId)!;
+      if (this.activeProjectId === projectId && this.mountedSnapshotProjectId !== projectId) {
+        this.mountSnapshot(projectId, snapshot);
+      }
       return;
     }
 
     const inflight = this.linearInflightFetch;
-    if (
-      inflight &&
-      inflight.projectId === projectId &&
-      inflight.generation === generation &&
-      !isExistingPaginationOptions
-    ) {
+    if (inflight?.projectId === projectId && !isExistingPaginationOptions) {
       return inflight.promise;
     }
 
@@ -408,12 +309,11 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       projectId,
       loadType,
       options,
-      isExistingPaginationOptions,
-      generation
+      isExistingPaginationOptions
     );
 
     if (!isExistingPaginationOptions) {
-      this.linearInflightFetch = { projectId, generation, promise: fetchPromise };
+      this.linearInflightFetch = { projectId, promise: fetchPromise };
       void fetchPromise.finally(() => {
         if (this.linearInflightFetch?.promise === fetchPromise) {
           this.linearInflightFetch = null;
@@ -431,12 +331,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     options: IssuePaginationOptions,
     isExistingPaginationOptions: boolean
   ) => {
-    const isProjectSwitch = this.loadedProjectId !== null && this.loadedProjectId !== projectId;
-    const sequence = this.beginFetch(
-      loadType,
-      !isExistingPaginationOptions,
-      !isProjectSwitch && !!this.groupedIssueIds
-    );
+    const sequence = this.beginFetch(loadType, !isExistingPaginationOptions, false);
 
     try {
       const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
@@ -448,7 +343,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
       this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
       runInAction(() => {
-        this.loadedProjectId = projectId;
+        this.mountedSnapshotProjectId = projectId;
       });
       return response;
     } catch (error) {
@@ -463,11 +358,15 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     projectId: string,
     loadType: TLoader,
     options: IssuePaginationOptions,
-    isExistingPaginationOptions: boolean,
-    generation: number
-  ) => {
-    const hasCommittedSnapshot = this.isProjectDataReady(projectId);
-    this.beginFetch(loadType, !isExistingPaginationOptions, hasCommittedSnapshot);
+    _isExistingPaginationOptions: boolean
+  ): Promise<TIssuesResponse | undefined> => {
+    const shouldShowLoader = !this.linearProjectSnapshots.has(projectId) && this.activeProjectId === projectId;
+
+    if (shouldShowLoader) {
+      runInAction(() => {
+        this.setLoader(loadType);
+      });
+    }
 
     try {
       const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
@@ -475,63 +374,69 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
         signal: undefined,
       });
 
-      if (!this.isFetchGenerationCurrent(projectId, generation)) {
+      const { issueList, groupedIssues, groupedIssueCount } = this.processIssueResponse(response);
+      const groupedIssueIds = this.normalizeLinearProjectGroupedIssueIds(groupedIssues);
+
+      if (!this.isValidSnapshotPayload(projectId, groupedIssueIds, groupedIssueCount, issueList)) {
+        runInAction(() => {
+          if (this.activeProjectId === projectId) {
+            this.mountedSnapshotProjectId = null;
+            this.setLoader("init-loader");
+          }
+        });
         return;
       }
 
-      this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
+      this.rootIssueStore.issues.addIssue(issueList);
+      this.rootIssueStore.issueDetail.relation.extractRelationsFromIssues(issueList);
 
-      runInAction(() => {
-        const normalized = this.normalizeLinearProjectGroupedIssueIds(
-          this.groupedIssueIds as TGroupedIssues
-        ) as TGroupedIssues;
-        this.groupedIssueIds = normalized;
+      const snapshot = this.createSnapshotFromFetch(
+        projectId,
+        response,
+        options,
+        groupedIssueIds,
+        groupedIssueCount,
+        issueList
+      );
+      this.saveSnapshot(projectId, snapshot);
 
-        if (!this.canCommitLinearProjectLoad(projectId, normalized)) {
-          this.setLoader("init-loader");
+      if (this.activeProjectId === projectId) {
+        this.mountSnapshot(projectId, snapshot);
+      } else {
+        this.remountActiveSnapshot();
+      }
+
+      void this.fetchParentStats(workspaceSlug, projectId);
+      return response;
+    } catch (error) {
+      if (this.isAbortError(error)) return;
+
+      if (this.activeProjectId === projectId) {
+        const existing = this.linearProjectSnapshots.get(projectId);
+        if (existing) {
+          this.mountSnapshot(projectId, existing);
           return;
         }
 
-        this.commitProjectLoad(projectId, generation);
-        this.setLoader(undefined);
-      });
+        runInAction(() => {
+          this.mountedSnapshotProjectId = null;
+          this.setLoader("init-loader");
+        });
+      }
 
-      if (this.isProjectDataReady(projectId)) {
-        this.cacheCurrentProjectIssues(projectId);
-      }
-      return response;
-    } catch (error) {
-      if (!this.isFetchGenerationCurrent(projectId, generation) || this.isAbortError(error)) {
-        return;
-      }
-      this.setLoader(undefined);
       throw error;
     }
   };
 
-  /**
-   * This method is called subsequent pages of pagination
-   * if groupId/subgroupId is provided, only that specific group's next page is fetched
-   * else all the groups' next page is fetched
-   * @param workspaceSlug
-   * @param projectId
-   * @param groupId
-   * @param subGroupId
-   * @returns
-   */
   fetchNextIssues = async (workspaceSlug: string, projectId: string, groupId?: string, subGroupId?: string) => {
     const cursorObject = this.getPaginationData(groupId, subGroupId);
-    // if there are no pagination options and the next page results do not exist the return
     if (!this.paginationOptions || (cursorObject && !cursorObject?.nextPageResults)) return;
 
-    const generation = this.activeGeneration;
     const sequence = this.bumpFetchSequence();
 
     try {
-      // set Loader
       this.setLoader("pagination", groupId, subGroupId);
 
-      // get params from stored pagination options
       const params = this.issueFilterStore?.getFilterParams(
         this.paginationOptions,
         projectId,
@@ -539,38 +444,29 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
         groupId,
         subGroupId
       );
-      // call the fetch issues API with the params for next page in issues
       const response = await this.issueService.getIssues(workspaceSlug, projectId, params);
 
       if (isLinearReadOnly()) {
-        if (!this.isFetchGenerationCurrent(projectId, generation)) return;
+        if (this.activeProjectId !== projectId) return;
       } else if (this.isStaleFetch(sequence)) {
         return;
       }
 
-      // after the next page of issues are fetched, call the base method to process the response
       this.onfetchNexIssues(response, groupId, subGroupId);
       return response;
     } catch (error) {
       if (isLinearReadOnly()) {
-        if (!this.isFetchGenerationCurrent(projectId, generation) || this.isAbortError(error)) return;
+        if (this.activeProjectId !== projectId || this.isAbortError(error)) return;
+        this.setLoader(undefined, groupId, subGroupId);
       } else if (this.isStaleFetch(sequence) || this.isAbortError(error)) {
         return;
+      } else {
+        this.setLoader(undefined, groupId, subGroupId);
       }
-      // set Loader as undefined if errored out
-      this.setLoader(undefined, groupId, subGroupId);
       throw error;
     }
   };
 
-  /**
-   * This Method exists to fetch the first page of the issues with the existing stored pagination
-   * This is useful for refetching when filters, groupBy, orderBy etc changes
-   * @param workspaceSlug
-   * @param projectId
-   * @param loadType
-   * @returns
-   */
   fetchIssuesWithExistingPagination = async (
     workspaceSlug: string,
     projectId: string,
@@ -579,27 +475,24 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     if (!this.paginationOptions) return;
 
     if (isLinearReadOnly()) {
-      this.linearProjectIssueCache.delete(projectId);
+      this.linearProjectSnapshots.delete(projectId);
+      runInAction(() => {
+        if (this.mountedSnapshotProjectId === projectId) {
+          this.mountedSnapshotProjectId = null;
+        }
+      });
       return await this.fetchIssues(workspaceSlug, projectId, loadType, this.paginationOptions, true);
     }
 
-    if (this.loadedProjectId !== projectId) return;
+    if (this.mountedSnapshotProjectId !== projectId) return;
     return await this.fetchIssues(workspaceSlug, projectId, loadType, this.paginationOptions, true);
   };
 
-  /**
-   * Override inherited create issue, to update list only if user is on current project
-   * @param workspaceSlug
-   * @param projectId
-   * @param data
-   * @returns
-   */
   override createIssue = async (workspaceSlug: string, projectId: string, data: Partial<TIssue>) => {
     const response = await super.createIssue(workspaceSlug, projectId, data, "", projectId === this.router.projectId);
     return response;
   };
 
-  // Using aliased names as they cannot be overridden in other stores
   archiveBulkIssues = this.bulkArchiveIssues;
   quickAddIssue = this.issueQuickAdd;
   updateIssue = this.issueUpdate;
