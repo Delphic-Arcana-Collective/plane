@@ -281,11 +281,12 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
   private restoreCachedProjectIssues(projectId: string, generation: number): boolean {
     const cached = this.linearProjectIssueCache.get(projectId);
-    if (!cached) return false;
-
-    if (cached.issues.length > 0) {
-      this.rootIssueStore.issues.addIssue(cached.issues);
+    if (!cached || !cached.issues?.length) {
+      if (cached) this.linearProjectIssueCache.delete(projectId);
+      return false;
     }
+
+    this.rootIssueStore.issues.addIssue(cached.issues);
 
     const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
     const groupedIssueIds = this.normalizeLinearProjectGroupedIssueIds(
