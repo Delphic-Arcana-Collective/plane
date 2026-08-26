@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { combine } from "@atlaskit/pragmatic-drag-and-drop/combine";
 import { autoScrollForElements } from "@atlaskit/pragmatic-drag-and-drop-auto-scroll/element";
 import { observer } from "mobx-react";
@@ -20,6 +20,7 @@ import { useIssues } from "@/hooks/store/use-issues";
 import { useUserPermissions } from "@/hooks/store/user";
 import { useIssuesActions } from "@/hooks/use-issues-actions";
 import { useWorkspaceIssueProperties } from "@/hooks/use-workspace-issue-properties";
+import { groupLinearIssuesFromFlatList, isLinearAllIssuesView } from "@/helpers/linear-display.helper";
 // local imports
 import { IssueLayoutHOC } from "../../issue-layout-HOC";
 import type { TRenderQuickActions } from "../../list/list-view-types";
@@ -58,6 +59,24 @@ export const WorkspaceKanbanRoot = observer(function WorkspaceKanbanRoot(props: 
   const collapsedGroups = issueFilters?.kanbanFilters || ({ group_by: [], sub_group_by: [] } as TIssueKanbanFilters);
 
   const KanBanView = sub_group_by ? KanBanSwimLanes : KanBan;
+  const kanbanGroupedIssueIds = useMemo(() => {
+    if (!groupedIssueIds) return {} as TGroupedIssues;
+    if (isLinearAllIssuesView(globalViewId) && group_by) {
+      return groupLinearIssuesFromFlatList(groupedIssueIds as TGroupedIssues, issueMap, group_by);
+    }
+    return groupedIssueIds as TGroupedIssues;
+  }, [globalViewId, group_by, groupedIssueIds, issueMap]);
+
+  const getKanbanGroupIssueCount = useCallback(
+    (groupId: string | undefined, subGroupId: string | undefined, isSubGroupCumulative: boolean) => {
+      if (isLinearAllIssuesView(globalViewId) && group_by && groupId) {
+        const ids = kanbanGroupedIssueIds[groupId];
+        return Array.isArray(ids) ? ids.length : 0;
+      }
+      return getGroupIssueCount(groupId, subGroupId, isSubGroupCumulative);
+    },
+    [globalViewId, group_by, kanbanGroupedIssueIds, getGroupIssueCount]
+  );
 
   const canEditProperties = useCallback(
     (projectId: string | undefined) => {
@@ -145,8 +164,8 @@ export const WorkspaceKanbanRoot = observer(function WorkspaceKanbanRoot(props: 
           <div className="h-full w-max">
             <KanBanView
               issuesMap={issueMap}
-              groupedIssueIds={(groupedIssueIds ?? {}) as TGroupedIssues}
-              getGroupIssueCount={getGroupIssueCount}
+              groupedIssueIds={kanbanGroupedIssueIds}
+              getGroupIssueCount={getKanbanGroupIssueCount}
               displayProperties={displayProperties}
               sub_group_by={sub_group_by}
               group_by={group_by}

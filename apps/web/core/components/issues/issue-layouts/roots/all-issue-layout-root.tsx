@@ -118,8 +118,9 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
         }
 
         const subGroupBy = displayFilters?.sub_group_by;
-        const canGroup = isLinearAllIssuesView(globalViewId) && layout === EIssueLayoutTypes.KANBAN;
-        const perPageCount = layout === EIssueLayoutTypes.KANBAN ? (subGroupBy ? 10 : 30) : 100;
+        const isLinearAll = isLinearAllIssuesView(globalViewId);
+        const canGroup = !isLinearAll && layout === EIssueLayoutTypes.KANBAN;
+        const perPageCount = isLinearAll ? 100 : layout === EIssueLayoutTypes.KANBAN ? (subGroupBy ? 10 : 30) : 100;
 
         await fetchIssues(workspaceSlug, globalViewId, groupedIssueIds ? "mutation" : "init-loader", {
           canGroup,

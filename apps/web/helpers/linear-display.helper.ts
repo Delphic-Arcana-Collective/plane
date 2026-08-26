@@ -4,9 +4,17 @@
  * See the LICENSE file for details.
  */
 
-import type { IIssueDisplayFilterOptions, ILayoutDisplayFiltersOptions, TIssueComment } from "@plane/types";
+import type {
+  GroupByColumnTypes,
+  IIssueDisplayFilterOptions,
+  ILayoutDisplayFiltersOptions,
+  IIssueMap,
+  TGroupedIssues,
+  TIssue,
+  TIssueComment,
+} from "@plane/types";
 import { EIssueLayoutTypes } from "@plane/types";
-import { ISSUE_DISPLAY_FILTERS_BY_PAGE } from "@plane/constants";
+import { ALL_ISSUES, ISSUE_DISPLAY_FILTERS_BY_PAGE } from "@plane/constants";
 
 /**
  * Linear display mode: Plane UI backed by apps/bff instead of Django.
@@ -81,6 +89,58 @@ export function getLinearDefaultDisplayFilters(): IIssueDisplayFilterOptions {
       layout: "month",
     },
   };
+}
+
+function getLinearIssueGroupKey(issue: TIssue, groupBy: GroupByColumnTypes): string {
+  switch (groupBy) {
+    case "state":
+      return issue.state_id ?? "none";
+    case "priority":
+      return issue.priority ?? "none";
+    case "labels":
+      return issue.label_ids?.[0] ?? "none";
+    case "assignees":
+      return issue.assignee_ids?.[0] ?? "none";
+    case "state_detail.group":
+      return issue.state__group ?? "none";
+    case "project":
+    case "team_project":
+      return issue.project_id ?? "none";
+    case "created_by":
+      return issue.created_by ?? "none";
+    case "cycle":
+      return issue.cycle_id ?? "none";
+    case "module":
+      return issue.module_ids?.[0] ?? "none";
+    default:
+      return "none";
+  }
+}
+
+/** Group a flat ALL_ISSUES list client-side for kanban — no extra API fetch. */
+export function groupLinearIssuesFromFlatList(
+  groupedIssueIds: TGroupedIssues,
+  issueMap: IIssueMap,
+  groupBy: GroupByColumnTypes | null
+): TGroupedIssues {
+  const flatIds = groupedIssueIds[ALL_ISSUES];
+  if (!groupBy || !Array.isArray(flatIds) || flatIds.length === 0) {
+    return groupedIssueIds;
+  }
+
+  const grouped: TGroupedIssues = {};
+  for (const issueId of flatIds) {
+    const issue = issueMap[issueId];
+    if (!issue) continue;
+    const key = getLinearIssueGroupKey(issue, groupBy);
+    const bucket = grouped[key];
+    if (Array.isArray(bucket)) {
+      bucket.push(issueId);
+    } else {
+      grouped[key] = [issueId];
+    }
+  }
+  return grouped;
 }
 
 export function getBffBaseUrl(): string {

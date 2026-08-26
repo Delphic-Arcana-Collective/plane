@@ -275,17 +275,12 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
             });
           });
 
-          if ("layout" in updatedDisplayFilters) {
-            const layout = _filters.displayFilters.layout;
-            const subGroupBy = _filters.displayFilters.sub_group_by;
-            const canGroup = layout === EIssueLayoutTypes.KANBAN;
-            const perPageCount = layout === EIssueLayoutTypes.KANBAN ? (subGroupBy ? 10 : 30) : 100;
+          const isLinearLayoutSwitch =
+            isLinearAllIssuesView(viewId) &&
+            "layout" in updatedDisplayFilters &&
+            Object.keys(updatedDisplayFilters).length === 1;
 
-            this.rootIssueStore.workspaceIssues.fetchIssues(workspaceSlug, viewId, "mutation", {
-              canGroup,
-              perPageCount,
-            });
-          } else {
+          if (!isLinearLayoutSwitch) {
             this.rootIssueStore.workspaceIssues.fetchIssuesWithExistingPagination(workspaceSlug, viewId, "mutation");
           }
 
