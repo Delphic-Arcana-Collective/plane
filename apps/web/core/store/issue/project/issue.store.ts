@@ -95,6 +95,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   private linearInflightFetch: TLinearInflightFetch | null = null;
 
   isProjectDataReady = (projectId: string): boolean => {
+    if (!isLinearReadOnly()) return false;
     if (this.activeProjectId !== projectId || this.mountedSnapshotProjectId !== projectId) {
       return false;
     }
@@ -102,27 +103,28 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     const snapshot = this.linearProjectSnapshots.get(projectId);
     if (!snapshot) return false;
 
-    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
-    return (
-      hasLinearGroupedIssueData(
-        snapshot.groupedIssueIds,
-        displayFilters?.layout,
-        displayFilters?.group_by as GroupByColumnTypes | null
-      ) && this.snapshotIssuesResolved(snapshot, projectId)
-    );
+    return this.isValidSnapshotRecord(snapshot, projectId);
   };
 
-  private snapshotIssuesResolved(snapshot: TLinearProjectSnapshot, projectId: string): boolean {
+  /** Validate snapshot payload itself — do not depend on issueMap hydration. */
+  private isValidSnapshotRecord(snapshot: TLinearProjectSnapshot, projectId: string): boolean {
     const flatIds = snapshot.groupedIssueIds[ALL_ISSUES];
     if (!Array.isArray(flatIds) || flatIds.length === 0) return false;
 
     const count = snapshot.groupedIssueCount[ALL_ISSUES];
     if (typeof count === "number" && flatIds.length !== count) return false;
 
-    return flatIds.every((issueId) => {
-      const issue = this.rootIssueStore.issues.getIssueById(issueId);
-      return !!issue && issue.project_id === projectId;
-    });
+    const issuesById = new Map(snapshot.issues.map((issue) => [issue.id, issue]));
+    if (!flatIds.every((issueId) => issuesById.get(issueId)?.project_id === projectId)) {
+      return false;
+    }
+
+    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
+    return hasLinearGroupedIssueData(
+      snapshot.groupedIssueIds,
+      displayFilters?.layout,
+      displayFilters?.group_by as GroupByColumnTypes | null
+    );
   }
 
   private normalizeLinearProjectGroupedIssueIds(groupedIssueIds: TGroupedIssues | TSubGroupedIssues): TGroupedIssues {
@@ -216,17 +218,16 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     this.activeProjectId = projectId;
 
     const snapshot = this.linearProjectSnapshots.get(projectId);
-    if (snapshot && this.snapshotIssuesResolved(snapshot, projectId)) {
+    if (snapshot && this.isValidSnapshotRecord(snapshot, projectId)) {
       this.mountSnapshot(projectId, snapshot);
       return;
     }
 
-    if (snapshot) {
-      this.linearProjectSnapshots.delete(projectId);
-    }
-
     runInAction(() => {
       this.mountedSnapshotProjectId = null;
+      this.groupedIssueIds = undefined;
+      this.groupedIssueCount = {};
+      this.issuePaginationData = {};
       this.setLoader("init-loader");
     });
   };
@@ -293,7 +294,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
     if (this.linearProjectSnapshots.has(projectId)) {
       const snapshot = this.linearProjectSnapshots.get(projectId)!;
-      if (this.activeProjectId === projectId && this.mountedSnapshotProjectId !== projectId) {
+      if (this.activeProjectId === projectId && this.isValidSnapshotRecord(snapshot, projectId)) {
         this.mountSnapshot(projectId, snapshot);
       }
       return;

@@ -33,7 +33,6 @@ import type { IQuickActionProps, TRenderQuickActions } from "../list/list-view-t
 import { getSourceFromDropPayload } from "../utils";
 import { KanBan } from "./default";
 import { KanBanSwimLanes } from "./swimlanes";
-import { KanbanLayoutLoader } from "@/components/ui/loader/layouts/kanban-layout-loader";
 
 export type KanbanStoreType =
   | EIssuesStoreType.PROJECT
@@ -104,6 +103,7 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
       storeType === EIssuesStoreType.PROJECT &&
       isLinearReadOnly() &&
       routeProjectId &&
+      "isProjectDataReady" in issues &&
       issues.isProjectDataReady(routeProjectId)
     ) {
       return;
@@ -122,13 +122,22 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
   ]);
 
   const kanbanGroupedIssueIds = useMemo(() => {
+    if (
+      storeType === EIssuesStoreType.PROJECT &&
+      isLinearReadOnly() &&
+      routeProjectId &&
+      "isProjectDataReady" in issues &&
+      !issues.isProjectDataReady(routeProjectId)
+    ) {
+      return {} as TGroupedIssues;
+    }
     const raw = issues?.groupedIssueIds;
     if (!raw) return {} as TGroupedIssues;
     if (storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && group_by) {
       return groupLinearIssuesFromFlatList(raw as TGroupedIssues, issueMap, group_by as GroupByColumnTypes);
     }
     return raw as TGroupedIssues;
-  }, [storeType, group_by, issues?.groupedIssueIds, issueMap]);
+  }, [storeType, routeProjectId, issues, group_by, issueMap]);
 
   const getKanbanGroupIssueCount = useCallback(
     (groupId: string | undefined, subGroupId: string | undefined, isSubGroupCumulative: boolean) => {
@@ -140,12 +149,6 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
     },
     [storeType, group_by, kanbanGroupedIssueIds, issues]
   );
-
-  const isLinearProjectLoading =
-    storeType === EIssuesStoreType.PROJECT &&
-    isLinearReadOnly() &&
-    routeProjectId &&
-    !issues.isProjectDataReady(routeProjectId);
 
   const fetchMoreIssues = useCallback(
     (groupId?: string, subgroupId?: string) => {
@@ -280,10 +283,6 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
   );
 
   const collapsedGroups = issuesFilter?.issueFilters?.kanbanFilters || { group_by: [], sub_group_by: [] };
-
-  if (isLinearProjectLoading) {
-    return <KanbanLayoutLoader />;
-  }
 
   return (
     <>

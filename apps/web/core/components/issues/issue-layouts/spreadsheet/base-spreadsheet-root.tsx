@@ -22,7 +22,6 @@ import { useIssuesActions } from "@/hooks/use-issues-actions";
 import { IssueLayoutHOC } from "../issue-layout-HOC";
 import type { IQuickActionProps, TRenderQuickActions } from "../list/list-view-types";
 import { SpreadsheetView } from "./spreadsheet-view";
-import { SpreadsheetLayoutLoader } from "@/components/ui/loader/layouts/spreadsheet-layout-loader";
 
 export type SpreadsheetStoreType =
   | EIssuesStoreType.PROJECT
@@ -74,6 +73,7 @@ export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: 
       storeType === EIssuesStoreType.PROJECT &&
       isLinearReadOnly() &&
       routeProjectId &&
+      "isProjectDataReady" in issues &&
       issues.isProjectDataReady(routeProjectId)
     ) {
       return;
@@ -81,11 +81,13 @@ export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: 
     fetchIssues("init-loader", { canGroup: false, perPageCount: 100 }, viewId);
   }, [fetchIssues, storeType, viewId, routeProjectId, issues]);
 
-  const isLinearProjectLoading =
-    storeType === EIssuesStoreType.PROJECT &&
-    isLinearReadOnly() &&
-    routeProjectId &&
-    !issues.isProjectDataReady(routeProjectId);
+  const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && routeProjectId;
+
+  const issueIds =
+    isLinearProject && "isProjectDataReady" in issues && !issues.isProjectDataReady(routeProjectId)
+      ? []
+      : (issues.groupedIssueIds?.[ALL_ISSUES] ?? []);
+  const nextPageResults = issues.getPaginationData(ALL_ISSUES, undefined)?.nextPageResults;
 
   const canEditProperties = useCallback(
     (projectId: string | undefined) => {
@@ -96,9 +98,6 @@ export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: 
     },
     [canEditPropertiesBasedOnProject, enableInlineEditing, isEditingAllowed]
   );
-
-  const issueIds = issues.groupedIssueIds?.[ALL_ISSUES] ?? [];
-  const nextPageResults = issues.getPaginationData(ALL_ISSUES, undefined)?.nextPageResults;
 
   const handleDisplayFiltersUpdate = useCallback(
     (updatedDisplayFilter: Partial<IIssueDisplayFilterOptions>) => {
@@ -136,10 +135,6 @@ export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: 
       restoreIssue,
     ]
   );
-
-  if (isLinearProjectLoading) {
-    return <SpreadsheetLayoutLoader />;
-  }
 
   if (!Array.isArray(issueIds)) return null;
 

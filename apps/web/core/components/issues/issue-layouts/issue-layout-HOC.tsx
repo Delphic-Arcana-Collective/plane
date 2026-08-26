@@ -21,6 +21,7 @@ import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
 import { decodeRouteProjectId, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // local imports
 import { IssueLayoutEmptyState } from "./empty-states";
+import { LinearProjectIssuesLoader } from "./linear-project-issues-loader";
 
 function ActiveLoader(props: { layout: EIssueLayoutTypes }) {
   const { layout } = props;
@@ -55,20 +56,27 @@ export const IssueLayoutHOC = observer(function IssueLayoutHOC(props: Props) {
 
   const isLinearProject =
     storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && "isProjectDataReady" in issues;
-  const isLinearProjectDisplayReady =
-    !isLinearProject || (!!routeProjectId && issues.isProjectDataReady(routeProjectId));
 
-  const issueCount = isLinearProjectDisplayReady ? issues.getGroupIssueCount(undefined, undefined, false) : undefined;
+  if (isLinearProject) {
+    if (!routeProjectId || !issues.isProjectDataReady(routeProjectId)) {
+      return <LinearProjectIssuesLoader />;
+    }
 
-  if (!isLinearProjectDisplayReady) {
-    return <ActiveLoader layout={layout} />;
+    const issueCount = issues.getGroupIssueCount(undefined, undefined, false);
+    if (issueCount === 0 && layout !== EIssueLayoutTypes.CALENDAR) {
+      return <IssueLayoutEmptyState storeType={storeType} />;
+    }
+
+    return <LayoutErrorBoundary key={layout}>{props.children}</LayoutErrorBoundary>;
   }
+
+  const issueCount = issues.getGroupIssueCount(undefined, undefined, false);
 
   if (issues?.getIssueLoader() === "init-loader" || issueCount === undefined) {
     return <ActiveLoader layout={layout} />;
   }
 
-  if (issues.getGroupIssueCount(undefined, undefined, false) === 0 && layout !== EIssueLayoutTypes.CALENDAR) {
+  if (issueCount === 0 && layout !== EIssueLayoutTypes.CALENDAR) {
     return <IssueLayoutEmptyState storeType={storeType} />;
   }
 

@@ -30,7 +30,6 @@ import { useIssuesActions } from "@/hooks/use-issues-actions";
 // components
 import { IssueLayoutHOC } from "../issue-layout-HOC";
 import { List } from "./default";
-import { ListLayoutLoader } from "@/components/ui/loader/layouts/list-layout-loader";
 // types
 import type { IQuickActionProps, TRenderQuickActions } from "./list-view-types";
 
@@ -101,11 +100,15 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
   const collapsedGroups =
     issueFiltersForView?.kanbanFilters || ({ group_by: [], sub_group_by: [] } as TIssueKanbanFilters);
   const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly();
-  const issueLoader = issues.getIssueLoader();
 
   useEffect(() => {
     if (!displayFilters || !workspaceSlugStr || !routeProjectId) return;
-    if (isLinearProject && issues.isProjectDataReady(routeProjectId)) {
+    if (
+      isLinearProject &&
+      routeProjectId &&
+      "isProjectDataReady" in issues &&
+      issues.isProjectDataReady(routeProjectId)
+    ) {
       return;
     }
     fetchIssues(
@@ -125,22 +128,26 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
     displayFilters,
     workspaceSlugStr,
     routeProjectId,
-    issues,
-    issues.groupedIssueIds,
-    issueLoader,
     isLinearProject,
+    issues,
   ]);
 
-  const isLinearProjectLoading = isLinearProject && routeProjectId && !issues.isProjectDataReady(routeProjectId);
-
   const listGroupedIssueIds = useMemo(() => {
+    if (
+      isLinearProject &&
+      routeProjectId &&
+      "isProjectDataReady" in issues &&
+      !issues.isProjectDataReady(routeProjectId)
+    ) {
+      return undefined;
+    }
     const raw = issues?.groupedIssueIds as TGroupedIssues | undefined;
     if (!raw) return undefined;
     if (isLinearProject && group_by) {
       return groupLinearIssuesFromFlatList(raw, issueMap, group_by);
     }
     return raw;
-  }, [isLinearProject, group_by, issues?.groupedIssueIds, issueMap]);
+  }, [isLinearProject, routeProjectId, issues, group_by, issueMap]);
 
   const groupedIssueIds = listGroupedIssueIds;
 
@@ -206,10 +213,6 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
     },
     [workspaceSlugStr, issueFiltersForView, routeProjectId, updateFilters]
   );
-
-  if (isLinearProjectLoading) {
-    return <ListLayoutLoader />;
-  }
 
   return (
     <IssueLayoutHOC layout={EIssueLayoutTypes.LIST}>
