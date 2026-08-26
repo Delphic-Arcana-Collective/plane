@@ -18,6 +18,7 @@ import type {
   TSubGroupedIssues,
   TGroupedIssueCount,
   TIssuePaginationData,
+  GroupByColumnTypes,
 } from "@plane/types";
 // helpers
 // base class
@@ -26,7 +27,11 @@ import { BaseIssuesStore } from "../helpers/base-issues.store";
 // services
 import type { IIssueRootStore } from "../root.store";
 import type { IProjectIssuesFilter } from "./filter.store";
-import { isLinearReadOnly, LINEAR_READ_ONLY_VIEW_FLAGS } from "@/helpers/linear-display.helper";
+import {
+  isLinearReadOnly,
+  LINEAR_READ_ONLY_VIEW_FLAGS,
+  hasLinearGroupedIssueData,
+} from "@/helpers/linear-display.helper";
 
 type TLinearProjectIssueCache = {
   groupedIssueIds: TGroupedIssues | TSubGroupedIssues;
@@ -77,8 +82,17 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   /** Project id the UI is currently showing — guards against stale in-flight responses. */
   activeProjectId: string | null = null;
   private linearProjectIssueCache = new Map<string, TLinearProjectIssueCache>();
+  private linearInflightFetches = new Map<string, Promise<TIssuesResponse | undefined>>();
 
-  isProjectDataReady = (projectId: string): boolean => this.activeProjectId === projectId && !!this.groupedIssueIds;
+  isProjectDataReady = (projectId: string): boolean => {
+    if (this.activeProjectId !== projectId || this.loadedProjectId !== projectId) return false;
+    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
+    return hasLinearGroupedIssueData(
+      this.groupedIssueIds as TGroupedIssues,
+      displayFilters?.layout,
+      displayFilters?.group_by as GroupByColumnTypes | null
+    );
+  };
 
   snapshotBeforeLinearNavigation = () => {
     if (!isLinearReadOnly() || !this.loadedProjectId || !this.groupedIssueIds) return;
@@ -210,7 +224,6 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
     if (isLinearMode && !isExistingPaginationOptions) {
       if (this.isProjectDataReady(projectId)) {
-        this.bumpFetchSequence();
         return;
       }
       if (this.restoreCachedProjectIssues(projectId)) {
@@ -220,27 +233,63 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
         });
         return;
       }
+
+      const inflight = this.linearInflightFetches.get(projectId);
+      if (inflight) {
+        return inflight;
+      }
     }
 
+    const fetchPromise = this.runFetchIssues(
+      workspaceSlug,
+      projectId,
+      loadType,
+      options,
+      isExistingPaginationOptions,
+      isLinearMode,
+      isProjectSwitch
+    );
+
+    if (isLinearMode && !isExistingPaginationOptions) {
+      this.linearInflightFetches.set(projectId, fetchPromise);
+      void fetchPromise.finally(() => {
+        if (this.linearInflightFetches.get(projectId) === fetchPromise) {
+          this.linearInflightFetches.delete(projectId);
+        }
+      });
+    }
+
+    return fetchPromise;
+  };
+
+  private runFetchIssues = async (
+    workspaceSlug: string,
+    projectId: string,
+    loadType: TLoader,
+    options: IssuePaginationOptions,
+    isExistingPaginationOptions: boolean,
+    isLinearMode: boolean,
+    isProjectSwitch: boolean
+  ) => {
     if (isLinearMode && isProjectSwitch && this.loadedProjectId && this.groupedIssueIds) {
       this.cacheCurrentProjectIssues(this.loadedProjectId);
     }
 
-    const preserveIssueList = isLinearMode ? !!this.groupedIssueIds : !isProjectSwitch && !!this.groupedIssueIds;
+    const preserveIssueList = !isProjectSwitch && !!this.groupedIssueIds;
 
     const sequence = this.beginFetch(loadType, !isExistingPaginationOptions, preserveIssueList);
 
     try {
-      // get params from pagination options
       const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
-      // call the fetch issues API with the params
       const response = await this.issueService.getIssues(workspaceSlug, projectId, params, {
         signal: isLinearMode ? undefined : this.controller.signal,
       });
 
-      if (this.rejectStaleProjectResponse(sequence, projectId)) return;
+      if (this.rejectStaleProjectResponse(sequence, projectId)) {
+        this.scheduleProjectFetchRetry(workspaceSlug, projectId, loadType, options, isExistingPaginationOptions);
+        return;
+      }
 
-      // after fetching issues, call the base method to process the response further
       this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
       runInAction(() => {
         this.commitActiveProject(projectId);
@@ -248,11 +297,30 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       this.cacheCurrentProjectIssues(projectId);
       return response;
     } catch (error) {
-      if (this.rejectStaleProjectResponse(sequence, projectId) || this.isAbortError(error)) return;
-      // set loader to undefined if errored out
+      if (this.rejectStaleProjectResponse(sequence, projectId) || this.isAbortError(error)) {
+        this.scheduleProjectFetchRetry(workspaceSlug, projectId, loadType, options, isExistingPaginationOptions);
+        return;
+      }
       this.setLoader(undefined);
       throw error;
     }
+  };
+
+  private scheduleProjectFetchRetry = (
+    workspaceSlug: string,
+    projectId: string,
+    loadType: TLoader,
+    options: IssuePaginationOptions,
+    isExistingPaginationOptions: boolean
+  ) => {
+    if (!isLinearReadOnly()) return;
+    if (this.activeProjectId !== projectId || this.isProjectDataReady(projectId)) return;
+    if (this.linearInflightFetches.has(projectId)) return;
+
+    queueMicrotask(() => {
+      if (this.activeProjectId !== projectId || this.isProjectDataReady(projectId)) return;
+      void this.fetchIssues(workspaceSlug, projectId, loadType, options, isExistingPaginationOptions);
+    });
   };
 
   /**

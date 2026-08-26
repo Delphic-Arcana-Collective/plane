@@ -143,6 +143,35 @@ export function groupLinearIssuesFromFlatList(
   return grouped;
 }
 
+/** Whether the store has issue ids usable for the active layout (avoids false "ready" on empty kanban). */
+export function hasLinearGroupedIssueData(
+  groupedIssueIds: TGroupedIssues | undefined,
+  layout: EIssueLayoutTypes | undefined,
+  groupBy: GroupByColumnTypes | null | undefined
+): boolean {
+  if (!groupedIssueIds) return false;
+
+  const groupKeys = Object.keys(groupedIssueIds).filter((key) => key !== ALL_ISSUES);
+
+  if (layout === EIssueLayoutTypes.KANBAN && groupBy) {
+    const flatIds = groupedIssueIds[ALL_ISSUES];
+    if (Array.isArray(flatIds) && flatIds.length > 0) return true;
+
+    return groupKeys.some((key) => {
+      const bucket = groupedIssueIds[key];
+      return Array.isArray(bucket) && bucket.length > 0;
+    });
+  }
+
+  const flatIds = groupedIssueIds[ALL_ISSUES];
+  if (Array.isArray(flatIds) && flatIds.length > 0) return true;
+
+  return groupKeys.some((key) => {
+    const bucket = groupedIssueIds[key];
+    return Array.isArray(bucket) && bucket.length > 0;
+  });
+}
+
 export function getBffBaseUrl(): string {
   return import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 }
