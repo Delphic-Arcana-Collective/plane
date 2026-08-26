@@ -123,23 +123,31 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     if (!groupedIssueIds) return false;
 
     const flatIds = groupedIssueIds[ALL_ISSUES];
-    if (!Array.isArray(flatIds) || flatIds.length === 0) return true;
+    if (Array.isArray(flatIds)) {
+      if (flatIds.length === 0) return false;
+      return flatIds.every((issueId) => {
+        const issue = this.rootIssueStore.issues.getIssueById(issueId);
+        return !issue || issue.project_id === projectId;
+      });
+    }
 
-    return flatIds.some((issueId) => this.rootIssueStore.issues.getIssueById(issueId)?.project_id === projectId);
+    return Object.entries(groupedIssueIds)
+      .filter(([key]) => key !== ALL_ISSUES)
+      .some(([, bucket]) => {
+        if (!Array.isArray(bucket) || bucket.length === 0) return false;
+        return bucket.every((issueId) => {
+          const issue = this.rootIssueStore.issues.getIssueById(issueId);
+          return !issue || issue.project_id === projectId;
+        });
+      });
   }
 
-  /** Invalidate in-flight work when leaving a project — no timing, generation mismatch only. */
+  /** Bump write generation when leaving project view — does not clear committed display data. */
   private invalidateProjectSession = () => {
     this.activeGeneration += 1;
-    runInAction(() => {
-      this.activeProjectId = null;
-      this.loadedProjectId = null;
-      this.loadedGeneration = 0;
-      this.groupedIssueIds = undefined;
-      this.issuePaginationData = {};
-      this.groupedIssueCount = {};
-      this.setLoader(undefined);
-    });
+    this.activeProjectId = null;
+    this.loadedProjectId = null;
+    this.loadedGeneration = 0;
   };
 
   snapshotBeforeLinearNavigation = (projectId: string) => {
@@ -155,6 +163,12 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
     this.activeProjectId = projectId;
     this.activeGeneration += 1;
+    const generation = this.activeGeneration;
+
+    if (this.restoreCachedProjectIssues(projectId, generation)) {
+      return;
+    }
+
     runInAction(() => {
       this.loadedProjectId = null;
       this.loadedGeneration = 0;
@@ -412,7 +426,8 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     isExistingPaginationOptions: boolean,
     generation: number
   ) => {
-    this.beginFetch(loadType, !isExistingPaginationOptions, false);
+    const hasCommittedSnapshot = this.isProjectDataReady(projectId);
+    this.beginFetch(loadType, !isExistingPaginationOptions, hasCommittedSnapshot);
 
     try {
       const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
