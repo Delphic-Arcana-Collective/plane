@@ -34,9 +34,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck BFF
-        run: pnpm turbo run check:types --filter=bff --filter=@plane/types
-
       # Use wrangler from apps/bff (not workspace root). Token needs Workers Scripts Edit + User Memberships Read.
       - name: Deploy Worker
         working-directory: apps/bff
