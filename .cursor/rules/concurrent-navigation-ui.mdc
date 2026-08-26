@@ -1,0 +1,67 @@
+---
+description: Concurrency + navigation UI invariants — stale writes vs visible reads must stay separate
+alwaysApply: true
+---
+
+# Concurrent Navigation UI
+
+Learned from Linear project-switching bugs. These are invariants, not suggestions.
+
+## 1. Stale detection gates writes, never reads
+
+A generation/token/request-id answers only: **“Can this response mutate store?”**
+
+- Stale response → discard write. Do not apply to store.
+- Stale does **not** mean: clear the screen, blank `groupedIssueIds`, or hide last valid data.
+
+**Wrong:** bump generation → `data = undefined` → empty UI until fetch completes.  
+**Right:** keep showing last committed snapshot for the current route, or show an explicit loader.
+
+## 2. Navigation has exactly two honest UI states
+
+When route/target changes:
+
+1. **Have valid committed data for this target** → show it immediately (memory cache is fine).
+2. **Don’t yet** → show **loading**, not an empty list/board.
+
+The forbidden third state: **not loading + empty + store thinks it’s ready**. Never ship this.
+
+## 3. Never use time to fix concurrency
+
+Forbidden as correctness tools:
+
+- `setTimeout` / delayed retry
+- `queueMicrotask` retry
+- “User clicked slowly so it worked”
+- Extra fetches whose only trigger is “maybe we’re stuck now”
+
+If timing changes the bug, the model is wrong. Fix the state machine.
+
+## 4. One owner for “what the UI shows now”
+
+Do not stack independent patches (`snapshot`, `isReady`, `preserveIssueList`, layout-specific grouping, timed refetch) on top of a broken split between **route**, **in-flight**, and **committed** data.
+
+Minimum model:
+
+| Concept | Role |
+|--------|------|
+| `activeTarget` | What the route/sidebar says user is viewing |
+| `generation` | Bumps on target change or leave; tags in-flight work |
+| `committed` | Last successfully applied payload for `(target, generation)` |
+| `inFlight` | Optional dedupe; completion still passes generation check |
+
+UI reads **committed for activeTarget** or **loader**. In-flight and stale responses never drive empty UI.
+
+## 5. Cache rules
+
+- Write cache only from **successful, generation-valid** commits — not on navigate, not before load finishes.
+- Restore cache only if it passes the same readiness checks as a fresh fetch.
+- Invalid cache → delete and fetch; don’t restore then patch with timers.
+
+## 6. Before adding a “fix”, ask
+
+1. Am I gating a **write** or accidentally clearing a **read**?
+2. Can the UI enter loading=false with no visible data?
+3. Does this assume a minimum delay between user actions?
+
+If any answer is wrong → redesign, don’t add another `if` or retry.
