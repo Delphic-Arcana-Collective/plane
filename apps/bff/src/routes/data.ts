@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../env.js";
-import { createBootstrapContext } from "../bootstrap/session.js";
+import { BFF_WORKSPACE_ID, createBootstrapContext } from "../bootstrap/session.js";
 import { getCache, matchWorkspace, requireCache, buildProjectIssuesResponse } from "./helpers.js";
 
 export function createProjectRoutes() {
@@ -122,6 +122,14 @@ export function createDataWorkspaceRoutes() {
     }
 
     const bootstrap = createBootstrapContext(env);
+    if (cache.ready && cache.projects.length > 0) {
+      return c.json({
+        ...bootstrap.workspace,
+        id: BFF_WORKSPACE_ID,
+        total_projects: cache.projects.length,
+      });
+    }
+
     return c.json(bootstrap.workspace);
   });
 

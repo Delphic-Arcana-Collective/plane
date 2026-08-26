@@ -3,7 +3,8 @@ import type { Env } from "../env.js";
 /** Stable viewer id used before Linear users are synced into cache. */
 export const BFF_VIEWER_USER_ID = "00000000-0000-4000-8000-000000000001";
 
-const BFF_WORKSPACE_ID = "00000000-0000-4000-8000-000000000002";
+/** Stable workspace id — must match across workspace + project payloads in the BFF snapshot. */
+export const BFF_WORKSPACE_ID = "00000000-0000-4000-8000-000000000002";
 const BFF_WORKSPACE_MEMBER_ID = "00000000-0000-4000-8000-000000000003";
 
 const EMPTY_VIEW_PROPS = {

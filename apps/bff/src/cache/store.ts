@@ -12,6 +12,7 @@ import type { LinearSyncSnapshot } from "../linear/client.js";
 import type { Env } from "../env.js";
 import { filterIssues } from "../mapper/index.js";
 import type { CacheBackend, CacheMeta, PlaneCache } from "./backend.js";
+import { normalizePlaneCacheWorkspace } from "./normalize.js";
 import { buildPlaneCacheFromSnapshot, createEmptyPlaneCache } from "./snapshot.js";
 import {
   getProjectUserProperties,
@@ -29,6 +30,7 @@ export class MemoryCacheBackend implements CacheBackend {
   }
 
   protected replaceCache(cache: PlaneCache): void {
+    normalizePlaneCacheWorkspace(cache);
     this.inner = cache;
   }
 
@@ -43,6 +45,7 @@ export class MemoryCacheBackend implements CacheBackend {
 
   async applySnapshot(snapshot: LinearSyncSnapshot, env: Env): Promise<void> {
     this.inner = buildPlaneCacheFromSnapshot(snapshot, env);
+    normalizePlaneCacheWorkspace(this.inner);
   }
 
   async setError(message: string): Promise<void> {

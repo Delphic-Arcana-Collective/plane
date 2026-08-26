@@ -17,7 +17,7 @@ import type {
   LinearUser,
 } from "../linear/client.js";
 import { LINEAR_TEAM_FALLBACK_PROJECT_PREFIX } from "../linear/client.js";
-import { createBootstrapContext } from "../bootstrap/session.js";
+import { createBootstrapContext, BFF_WORKSPACE_ID } from "../bootstrap/session.js";
 
 const PRIORITY_MAP: Record<number, TIssuePriorities> = {
   0: "none",
@@ -207,7 +207,7 @@ export function mapWorkspace(snapshot: LinearSyncSnapshot, env: Env): IWorkspace
 
   return {
     ...bootstrap.workspace,
-    id: snapshot.organization.id,
+    id: BFF_WORKSPACE_ID,
     name: env.PLANE_WORKSPACE_NAME || snapshot.organization.name,
     slug: env.PLANE_WORKSPACE_SLUG,
     url: env.PLANE_WORKSPACE_SLUG,
