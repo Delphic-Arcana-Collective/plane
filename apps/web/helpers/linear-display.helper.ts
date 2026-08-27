@@ -59,6 +59,11 @@ export function decodeRouteProjectId(projectId: string | undefined): string | un
     return projectId;
   }
 }
+/** Project-scoped issues list in Linear display mode. */
+export function getLinearProjectIssuesPath(workspaceSlug: string, projectId: string): string {
+  return `/${workspaceSlug}/projects/${encodeURIComponent(projectId)}/issues`;
+}
+
 /** Workspace-wide issues list (no project selected) in Linear display mode. */
 export function getLinearAllIssuesPath(workspaceSlug?: string): string {
   const slug = workspaceSlug || getLinearWorkspaceSlug();

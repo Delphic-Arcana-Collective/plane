@@ -11,7 +11,7 @@ import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/eleme
 import { setCustomNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview";
 import { attachInstruction, extractInstruction } from "@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item";
 import { observer } from "mobx-react";
-import { useParams, usePathname, useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createRoot } from "react-dom/client";
 import scrollIntoView from "smooth-scroll-into-view-if-needed";
@@ -27,7 +27,7 @@ import { IconButton } from "@plane/propel/icon-button";
 import { Tooltip } from "@plane/propel/tooltip";
 import { CustomMenu, DropIndicator, DragHandle, ControlLink } from "@plane/ui";
 import { cn } from "@plane/utils";
-import { getLinearAllIssuesPath, isLinearDisplayMode, isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { isLinearDisplayMode, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // components
 import { DEFAULT_TAB_KEY, getTabUrl } from "@/components/navigation/tab-navigation-utils";
 import { useTabPreferences } from "@/components/navigation/use-tab-preferences";
@@ -94,17 +94,14 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);
   // router
   const { workspaceSlug, projectId: URLProjectId } = useParams();
-  const pathname = usePathname();
   const router = useRouter();
   // derived values
   const project = getPartialProjectById(projectId);
   const isLinearMode = isLinearDisplayMode();
   const encodedProjectId = encodeURIComponent(projectId);
   const linearIssuesUrl = `/${workspaceSlug}/projects/${encodedProjectId}/issues`;
-  const linearAllIssuesUrl = getLinearAllIssuesPath(workspaceSlug?.toString());
   const activeProjectId = URLProjectId?.toString() ? decodeURIComponent(URLProjectId.toString()) : undefined;
-  const isOnAllIssuesView = pathname?.includes("/workspace-views/all-issues");
-  const isProjectSelected = !isOnAllIssuesView && activeProjectId === project?.id;
+  const isProjectSelected = activeProjectId === project?.id;
 
   // Get available navigation items for this project
   const navigationItems = useNavigationItems({
@@ -302,7 +299,7 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   const shouldHighlightProject =
     isProjectSelected && (isLinearMode || projectPreferences.navigationMode !== "ACCORDION");
   const projectLinkUrl = isLinearMode ? linearIssuesUrl : defaultTabUrl;
-  const linearHref = isProjectSelected ? linearAllIssuesUrl : linearIssuesUrl;
+  const linearHref = linearIssuesUrl;
 
   return (
     <>

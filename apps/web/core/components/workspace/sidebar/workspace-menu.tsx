@@ -11,6 +11,7 @@ import { Disclosure, Transition } from "@headlessui/react";
 // plane imports
 import { AnalyticsIcon, CycleIcon, ProjectIcon, ViewsIcon } from "@plane/propel/icons";
 import { EUserWorkspaceRoles } from "@plane/types";
+import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // hooks
 import useLocalStorage from "@/hooks/use-local-storage";
 // local imports
@@ -54,7 +55,7 @@ export const SidebarWorkspaceMenu = observer(function SidebarWorkspaceMenu() {
       access: [EUserWorkspaceRoles.ADMIN, EUserWorkspaceRoles.MEMBER],
       Icon: AnalyticsIcon,
     },
-  ];
+  ].filter((item) => !(isLinearDisplayMode() && item.key === "views"));
 
   return (
     <Disclosure as="div" defaultOpen>

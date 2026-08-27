@@ -11,6 +11,8 @@ import { DEFAULT_GLOBAL_VIEWS_LIST } from "@plane/constants";
 // components
 import { PageHead } from "@/components/core/page-title";
 import { AllIssueLayoutRoot } from "@/components/issues/issue-layouts/roots/all-issue-layout-root";
+import { LinearDefaultProjectRedirect } from "@/components/linear/linear-default-project-redirect";
+import { isLinearAllIssuesView } from "@/helpers/linear-display.helper";
 // hooks
 import { useWorkspace } from "@/hooks/store/use-workspace";
 import type { Route } from "./+types/page";
@@ -26,6 +28,10 @@ function GlobalViewIssuesPage({ params }: Route.ComponentProps) {
   // derived values
   const defaultView = DEFAULT_GLOBAL_VIEWS_LIST.find((view) => view.key === globalViewId);
   const pageTitle = currentWorkspace?.name ? `${currentWorkspace?.name} - All Views` : undefined;
+
+  if (isLinearAllIssuesView(globalViewId)) {
+    return <LinearDefaultProjectRedirect />;
+  }
 
   // handlers
   const toggleLoading = (value: boolean) => setIsLoading(value);

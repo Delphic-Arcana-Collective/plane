@@ -12,7 +12,7 @@ import useSWR from "swr";
 import { LogoSpinner } from "@/components/common/logo-spinner";
 // helpers
 import { EPageTypes } from "@/helpers/authentication.helper";
-import { getLinearAllIssuesPath, isLinearDisplayMode } from "@/helpers/linear-display.helper";
+import { getLinearWorkspaceSlug, isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // hooks
 import { useWorkspace } from "@/hooks/store/use-workspace";
 import { useUser, useUserProfile, useUserSettings } from "@/hooks/store/user";
@@ -61,7 +61,7 @@ export const AuthenticationWrapper = observer(function AuthenticationWrapper(pro
 
     // Linear display mode: skip workspace discovery, go straight to configured slug
     if (isLinearDisplayMode()) {
-      return getLinearAllIssuesPath();
+      return `/${getLinearWorkspaceSlug()}`;
     }
 
     // validating the nextPath from the router query

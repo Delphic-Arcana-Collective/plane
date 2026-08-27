@@ -1,5 +1,5 @@
 /**
- * Local navigation stress test: B → deselect → A → B, repeated.
+ * Local navigation stress test: A → B → B, repeated (project-only, no merged all-issues view).
  * Single browser session; rounds chain client-side (no per-round goto).
  */
 
@@ -31,7 +31,6 @@ const CHROME_PATH =
 
 type StressTimeouts = {
   projectMs: number;
-  allIssuesMs: number;
   sidebarMs: number;
   gotoMs: number;
   pathWaitCapMs: number;
@@ -45,7 +44,6 @@ type CachedResponse = {
 
 const BOOT_TIMEOUTS: StressTimeouts = {
   projectMs: 90_000,
-  allIssuesMs: 90_000,
   sidebarMs: 45_000,
   gotoMs: 120_000,
   pathWaitCapMs: 8_000,
@@ -177,25 +175,11 @@ async function cacheResponse(response: HTTPResponse, stressPort: number, respons
   }
 }
 
-async function gotoAllIssues(page: Page, timeouts: StressTimeouts, step: string) {
-  await page.goto(`${WEB_URL}/${TEST_WORKSPACE_SLUG}/workspace-views/all-issues`, {
+async function bootToProjectB(page: Page, timeouts: StressTimeouts, stepPrefix: string) {
+  await page.goto(`${WEB_URL}/${TEST_WORKSPACE_SLUG}/projects/${encodeURIComponent(NAV_PROJECT_B_ID)}/issues`, {
     waitUntil: "domcontentloaded",
     timeout: timeouts.gotoMs,
   });
-  await waitForAllIssuesView(page, timeouts.allIssuesMs, step);
-}
-
-async function bootToProjectB(page: Page, timeouts: StressTimeouts, stepPrefix: string) {
-  await gotoAllIssues(page, timeouts, `${stepPrefix} all-issues`);
-  await clickUntilPath(
-    page,
-    NAV_PROJECT_B_ID,
-    NAV_PROJECT_B_NAME,
-    `/projects/${encodeURIComponent(NAV_PROJECT_B_ID)}/issues`,
-    timeouts.sidebarMs,
-    timeouts.pathWaitCapMs,
-    `${stepPrefix} select B`
-  );
   await waitForProjectReady(page, timeouts.projectMs, `${stepPrefix} select B`);
 }
 
@@ -308,37 +292,12 @@ async function waitForIssueBlocks(page: Page, timeoutMs: number, step: string) {
   }
 }
 
-async function waitForAllIssuesView(page: Page, timeoutMs: number, step: string) {
-  try {
-    await page.waitForFunction(
-      () => {
-        const onAllIssues = /\/workspace-views\/all-issues/.test(window.location.href);
-        const blocks = document.querySelectorAll('[id^="issue_issue-"]').length;
-        return onAllIssues && blocks > 0;
-      },
-      { timeout: timeoutMs, polling: 16 }
-    );
-  } catch (error) {
-    throw new Error(`${step}: ${error instanceof Error ? error.message : error}`, { cause: error });
-  }
-}
-
 async function waitForProjectReady(page: Page, timeoutMs: number, step: string) {
   await waitForIssueBlocks(page, timeoutMs, step);
 }
 
-/** B → deselect → A → B. Caller must leave the page on project B. */
+/** A → B. Caller must leave the page on project B. */
 async function runRoundSteps(page: Page, timeouts: StressTimeouts) {
-  await clickUntilPath(
-    page,
-    NAV_PROJECT_B_ID,
-    NAV_PROJECT_B_NAME,
-    "/workspace-views/all-issues",
-    timeouts.sidebarMs,
-    timeouts.pathWaitCapMs,
-    "deselect B"
-  );
-
   await clickUntilPath(
     page,
     NAV_PROJECT_A_ID,
@@ -359,6 +318,7 @@ async function runRoundSteps(page: Page, timeouts: StressTimeouts) {
     timeouts.pathWaitCapMs,
     "select B again"
   );
+  await waitForIssueBlocks(page, timeouts.projectMs, "select B again");
 }
 
 async function calibrateTimeouts(page: Page): Promise<StressTimeouts> {
@@ -367,7 +327,6 @@ async function calibrateTimeouts(page: Page): Promise<StressTimeouts> {
   const roundMs = Date.now() - start;
   const timeouts = {
     projectMs: Math.max(3_000, Math.ceil(roundMs * 0.35)),
-    allIssuesMs: Math.max(2_000, Math.ceil(roundMs * 0.25)),
     sidebarMs: Math.max(12_000, Math.ceil(roundMs * 0.8)),
     gotoMs: Math.max(15_000, Math.ceil(roundMs * 0.5)),
     pathWaitCapMs: Math.max(3_000, Math.ceil(roundMs * 0.5)),

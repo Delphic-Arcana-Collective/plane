@@ -5,14 +5,15 @@
  */
 
 import { observer } from "mobx-react";
-import { Navigate, useParams } from "react-router";
+import { useParams } from "react-router";
 // components
 import { useTranslation } from "@plane/i18n";
 import { AppHeader } from "@/components/core/app-header";
 import { ContentWrapper } from "@/components/core/content-wrapper";
 import { PageHead } from "@/components/core/page-title";
 import { WorkspaceHomeView } from "@/components/home";
-import { getLinearAllIssuesPath, isLinearDisplayMode } from "@/helpers/linear-display.helper";
+import { LinearDefaultProjectRedirect } from "@/components/linear/linear-default-project-redirect";
+import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // hooks
 import { useWorkspace } from "@/hooks/store/use-workspace";
 // local components
@@ -24,7 +25,7 @@ function WorkspaceDashboardPage() {
   const { t } = useTranslation();
 
   if (isLinearDisplayMode() && workspaceSlug) {
-    return <Navigate to={getLinearAllIssuesPath(workspaceSlug.toString())} replace />;
+    return <LinearDefaultProjectRedirect />;
   }
 
   // derived values
