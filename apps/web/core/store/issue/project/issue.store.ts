@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { set } from "lodash-es";
 import { action, computed, makeObservable, observable, runInAction } from "mobx";
 // types
 import { ALL_ISSUES } from "@plane/constants";
@@ -29,6 +30,7 @@ import {
   hasLinearGroupedIssueData,
   isLinearReadOnly,
   LINEAR_READ_ONLY_VIEW_FLAGS,
+  syncLinearGroupedIssueCounts,
 } from "@/helpers/linear-display.helper";
 
 export interface IProjectIssues extends IBaseIssuesStore {
@@ -61,6 +63,7 @@ export interface IProjectIssues extends IBaseIssuesStore {
   bulkUpdateProperties: (workspaceSlug: string, projectId: string, data: TBulkOperationsPayload) => Promise<void>;
   loadedProjectId: string | null;
   isProjectViewReady: (projectId: string) => boolean;
+  ensureLinearProjectIssuesGrouped: (projectId: string) => boolean;
 }
 
 export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
@@ -79,8 +82,26 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     const layout = filters?.displayFilters?.layout ?? EIssueLayoutTypes.LIST;
     const groupBy = (filters?.displayFilters?.group_by ?? null) as GroupByColumnTypes | null;
 
+    if (groupBy === "state") {
+      const states = this.rootIssueStore.rootStore.state.getProjectStates(projectId);
+      if (!states?.length) return false;
+    }
+
     return hasLinearGroupedIssueData(this.groupedIssueIds, layout, groupBy);
   };
+
+  ensureLinearProjectIssuesGrouped = (projectId: string): boolean => {
+    if (!isLinearReadOnly()) return true;
+    if (this.loadedProjectId !== projectId || !this.groupedIssueIds) return false;
+    return this.normalizeLinearGroupedIssues(projectId);
+  };
+
+  private applyLinearGroupedIssueCounts(groupedIssueIds: TGroupedIssues) {
+    const synced = syncLinearGroupedIssueCounts(groupedIssueIds, this.groupedIssueCount);
+    for (const [key, count] of Object.entries(synced)) {
+      set(this.groupedIssueCount, [key], count);
+    }
+  }
 
   private normalizeLinearGroupedIssues(projectId: string) {
     const groupedIssueIds = this.groupedIssueIds;
@@ -97,18 +118,18 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
     const filters = this.issueFilterStore.getIssueFilters(projectId);
     const groupBy = (filters?.displayFilters?.group_by ?? null) as GroupByColumnTypes | null;
-    if (!groupBy || !Array.isArray(flatIds) || flatIds.length === 0) {
-      return true;
+    if (groupBy && Array.isArray(flatIds) && flatIds.length > 0) {
+      const issueMap = Object.fromEntries(
+        flatIds.flatMap((issueId) => {
+          const issue = getIssueById(issueId);
+          return issue ? [[issueId, issue] as const] : [];
+        })
+      );
+
+      this.groupedIssueIds = groupLinearIssuesFromFlatList(groupedIssueIds, issueMap, groupBy);
     }
 
-    const issueMap = Object.fromEntries(
-      flatIds.flatMap((issueId) => {
-        const issue = getIssueById(issueId);
-        return issue ? [[issueId, issue] as const] : [];
-      })
-    );
-
-    this.groupedIssueIds = groupLinearIssuesFromFlatList(groupedIssueIds, issueMap, groupBy);
+    this.applyLinearGroupedIssueCounts(this.groupedIssueIds);
     return true;
   }
 
@@ -129,6 +150,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     makeObservable(this, {
       viewFlags: computed,
       loadedProjectId: observable,
+      ensureLinearProjectIssuesGrouped: action,
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,

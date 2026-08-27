@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 import { combine } from "@atlaskit/pragmatic-drag-and-drop/combine";
 import { autoScrollForElements } from "@atlaskit/pragmatic-drag-and-drop-auto-scroll/element";
 import { observer } from "mobx-react";
+import { useParams } from "next/navigation";
 // plane constants
 import { ALL_ISSUES } from "@plane/constants";
 // types
@@ -26,6 +27,7 @@ import type {
 import { MultipleSelectGroup } from "@/components/core/multiple-select";
 // hooks
 import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
+import { decodeRouteProjectId } from "@/helpers/linear-display.helper";
 // plane web components
 import { IssueBulkOperationsRoot } from "@/components/issues/bulk-operations";
 // plane web hooks
@@ -82,6 +84,8 @@ export const List = observer(function List(props: IList) {
   } = props;
 
   const storeType = useIssueStoreType();
+  const { projectId: routeProjectIdParam } = useParams();
+  const routeProjectId = decodeRouteProjectId(routeProjectIdParam?.toString());
   // plane web hooks
   const isBulkOperationsEnabled = useBulkOperationStatus();
 
@@ -92,6 +96,7 @@ export const List = observer(function List(props: IList) {
     includeNone: true,
     isWorkspaceLevel: isWorkspaceLevel(storeType),
     isEpic: isEpic,
+    projectId: routeProjectId,
   });
 
   // Enable Auto Scroll for Main Kanban
@@ -111,7 +116,7 @@ export const List = observer(function List(props: IList) {
 
   const getGroupIndex = (groupId: string | undefined) => groups.findIndex(({ id }) => id === groupId);
 
-  const is_list = group_by === null ? true : false;
+  const is_list = group_by === null;
 
   // create groupIds array and entities object for bulk ops
   const groupIds = groups.map((g) => g.id);

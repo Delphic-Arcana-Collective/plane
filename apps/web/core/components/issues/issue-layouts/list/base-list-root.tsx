@@ -110,6 +110,9 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
       issues.isProjectViewReady(routeProjectId) &&
       issues.loadedProjectId === routeProjectId
     ) {
+      if ("ensureLinearProjectIssuesGrouped" in issues) {
+        issues.ensureLinearProjectIssuesGrouped(routeProjectId);
+      }
       return;
     }
     fetchIssues(

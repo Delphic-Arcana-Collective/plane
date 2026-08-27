@@ -17,8 +17,8 @@
     "fix:format": "oxfmt .",
     "test": "vitest run",
     "test:navigation-stress": "tsx tests/linear-navigation.stress.ts",
+    "test:navigation-prod-stress": "tsx tests/linear-navigation.prod.stress.ts",
     "test:browser": "node tests/browser.smoke.mjs",
-    "test:navigation-stress": "tsx tests/linear-navigation.stress.ts",
     "dev:worker": "wrangler dev",
     "deploy:worker": "wrangler deploy",
     "clean": "rm -rf .turbo node_modules dist"

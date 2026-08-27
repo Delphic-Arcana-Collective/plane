@@ -4,7 +4,14 @@
  * See the LICENSE file for details.
  */
 
-import type { TIssueComment, TIssue, IIssueMap, TGroupedIssues, GroupByColumnTypes } from "@plane/types";
+import type {
+  TIssueComment,
+  TIssue,
+  IIssueMap,
+  TGroupedIssues,
+  TGroupedIssueCount,
+  GroupByColumnTypes,
+} from "@plane/types";
 import { EIssueLayoutTypes } from "@plane/types";
 import { ALL_ISSUES } from "@plane/constants";
 
@@ -136,6 +143,22 @@ export function groupLinearIssuesFromFlatList(
   return grouped;
 }
 
+/** Mirror grouped issue id bucket sizes into groupedIssueCount for list/kanban visibility. */
+export function syncLinearGroupedIssueCounts(
+  groupedIssueIds: TGroupedIssues,
+  groupedIssueCount: TGroupedIssueCount = {}
+): TGroupedIssueCount {
+  const next: TGroupedIssueCount = { ...groupedIssueCount };
+
+  for (const [key, ids] of Object.entries(groupedIssueIds)) {
+    if (Array.isArray(ids)) {
+      next[key] = ids.length;
+    }
+  }
+
+  return next;
+}
+
 /** Whether committed issue ids can render the active layout. */
 export function hasLinearGroupedIssueData(
   groupedIssueIds: TGroupedIssues | undefined,
@@ -148,8 +171,7 @@ export function hasLinearGroupedIssueData(
   if (Array.isArray(flatIds) && flatIds.length === 0) return true;
 
   if ((layout === EIssueLayoutTypes.KANBAN || layout === EIssueLayoutTypes.LIST) && groupBy) {
-    if (hasNonEmptyGroupBuckets(groupedIssueIds)) return true;
-    return Array.isArray(flatIds) && flatIds.length > 0;
+    return hasNonEmptyGroupBuckets(groupedIssueIds);
   }
 
   if (Array.isArray(flatIds) && flatIds.length > 0) return true;
