@@ -77,6 +77,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   isProjectViewReady = (projectId: string): boolean => {
     if (!isLinearReadOnly()) return true;
     if (this.loadedProjectId !== projectId || !this.groupedIssueIds) return false;
+    if (!this.groupedIssuesMatchProject(projectId)) return false;
 
     const filters = this.issueFilterStore.getIssueFilters(projectId);
     const layout = filters?.displayFilters?.layout ?? EIssueLayoutTypes.LIST;
@@ -95,6 +96,28 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     if (this.loadedProjectId !== projectId || !this.groupedIssueIds) return false;
     return this.normalizeLinearGroupedIssues(projectId);
   };
+
+  private groupedIssuesMatchProject(projectId: string): boolean {
+    const groupedIssueIds = this.groupedIssueIds;
+    if (!groupedIssueIds) return false;
+
+    const getIssueById = this.rootIssueStore.issues.getIssueById;
+    const issueIds = new Set<string>();
+
+    for (const value of Object.values(groupedIssueIds)) {
+      if (!Array.isArray(value)) continue;
+      for (const issueId of value) issueIds.add(issueId);
+    }
+
+    if (issueIds.size === 0) return false;
+
+    for (const issueId of issueIds) {
+      const issue = getIssueById(issueId);
+      if (!issue || issue.project_id !== projectId) return false;
+    }
+
+    return true;
+  }
 
   private applyLinearGroupedIssueCounts(groupedIssueIds: TGroupedIssues) {
     const synced = syncLinearGroupedIssueCounts(groupedIssueIds, this.groupedIssueCount);
@@ -232,6 +255,9 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
     runInAction(() => {
       this.setLoader(loadType);
+      if (this.loadedProjectId !== projectId) {
+        this.loadedProjectId = null;
+      }
     });
 
     try {

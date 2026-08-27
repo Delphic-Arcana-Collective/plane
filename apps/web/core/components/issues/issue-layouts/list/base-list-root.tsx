@@ -104,17 +104,6 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
 
   useEffect(() => {
     if (!displayFilters || !workspaceSlugStr || !routeProjectId) return;
-    if (
-      isLinearProject &&
-      "isProjectViewReady" in issues &&
-      issues.isProjectViewReady(routeProjectId) &&
-      issues.loadedProjectId === routeProjectId
-    ) {
-      if ("ensureLinearProjectIssuesGrouped" in issues) {
-        issues.ensureLinearProjectIssuesGrouped(routeProjectId);
-      }
-      return;
-    }
     fetchIssues(
       "init-loader",
       { canGroup: !isLinearProject, perPageCount: isLinearProject ? 100 : group_by ? 50 : 100 },

@@ -105,18 +105,6 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
 
   useEffect(() => {
     if (storeType === EIssuesStoreType.PROJECT && !routeProjectId) return;
-    if (
-      isLinearProject &&
-      routeProjectId &&
-      "isProjectViewReady" in issues &&
-      issues.isProjectViewReady(routeProjectId) &&
-      issues.loadedProjectId === routeProjectId
-    ) {
-      if ("ensureLinearProjectIssuesGrouped" in issues) {
-        issues.ensureLinearProjectIssuesGrouped(routeProjectId);
-      }
-      return;
-    }
     fetchIssues(
       "init-loader",
       { canGroup: !isLinearProject, perPageCount: isLinearProject ? 100 : sub_group_by ? 10 : 30 },

@@ -144,12 +144,17 @@ async function readCounts(page: Page) {
 }
 
 async function assertProjectView(page: Page, label: string) {
-  const { issueBlocks, headerCount } = await readCounts(page);
-  if (headerCount > 0 && issueBlocks === 0) {
-    throw new Error(`${label}: header shows ${headerCount} work items but list rendered 0 issue rows`);
+  const deadline = Date.now() + 5000;
+  let last = { issueBlocks: 0, headerCount: 0 };
+
+  while (Date.now() < deadline) {
+    last = await readCounts(page);
+    if (last.headerCount === 0 || last.issueBlocks > 0) break;
+    await sleep(200);
   }
-  if (headerCount > 0 && issueBlocks > 0 && issueBlocks < Math.min(headerCount, 1)) {
-    throw new Error(`${label}: header=${headerCount}, visible issues=${issueBlocks}`);
+
+  if (last.headerCount > 0 && last.issueBlocks === 0) {
+    throw new Error(`${label}: header shows ${last.headerCount} work items but list rendered 0 issue rows`);
   }
 }
 
