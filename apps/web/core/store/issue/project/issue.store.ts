@@ -126,12 +126,27 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     }
   }
 
+  private collectGroupedIssueIds(groupedIssueIds: TGroupedIssues): string[] {
+    const ids = new Set<string>();
+    for (const value of Object.values(groupedIssueIds)) {
+      if (!Array.isArray(value)) continue;
+      for (const issueId of value) ids.add(issueId);
+    }
+    return Array.from(ids);
+  }
+
   private normalizeLinearGroupedIssues(projectId: string) {
     const groupedIssueIds = this.groupedIssueIds;
     if (!groupedIssueIds) return false;
 
-    const flatIds = groupedIssueIds[ALL_ISSUES];
     const getIssueById = this.rootIssueStore.issues.getIssueById;
+    let flatIds = groupedIssueIds[ALL_ISSUES];
+    if (!Array.isArray(flatIds) || flatIds.length === 0) {
+      flatIds = this.collectGroupedIssueIds(groupedIssueIds);
+      if (flatIds.length > 0) {
+        groupedIssueIds[ALL_ISSUES] = flatIds;
+      }
+    }
 
     if (Array.isArray(flatIds) && flatIds.length > 0) {
       if (!flatIds.every((issueId) => getIssueById(issueId)?.project_id === projectId)) {
@@ -141,6 +156,8 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
     const filters = this.issueFilterStore.getIssueFilters(projectId);
     const groupBy = (filters?.displayFilters?.group_by ?? null) as GroupByColumnTypes | null;
+    const layout = filters?.displayFilters?.layout ?? EIssueLayoutTypes.LIST;
+
     if (groupBy && Array.isArray(flatIds) && flatIds.length > 0) {
       const issueMap = Object.fromEntries(
         flatIds.flatMap((issueId) => {
@@ -153,7 +170,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     }
 
     this.applyLinearGroupedIssueCounts(this.groupedIssueIds);
-    return true;
+    return hasLinearGroupedIssueData(this.groupedIssueIds, layout, groupBy);
   }
 
   get viewFlags(): ViewFlags {

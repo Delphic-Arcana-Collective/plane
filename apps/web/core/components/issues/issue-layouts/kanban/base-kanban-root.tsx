@@ -102,15 +102,33 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
 
   const orderBy = displayFilters?.order_by;
   const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly();
+  const linearLoadedProjectId = isLinearProject && "loadedProjectId" in issues ? issues.loadedProjectId : null;
+  const isLinearProjectReady =
+    isLinearProject && routeProjectId && "isProjectViewReady" in issues
+      ? issues.isProjectViewReady(routeProjectId)
+      : true;
 
   useEffect(() => {
     if (storeType === EIssuesStoreType.PROJECT && !routeProjectId) return;
+    if (isLinearProject && linearLoadedProjectId === routeProjectId && isLinearProjectReady) {
+      return;
+    }
     fetchIssues(
       "init-loader",
       { canGroup: !isLinearProject, perPageCount: isLinearProject ? 100 : sub_group_by ? 10 : 30 },
       viewId
     );
-  }, [fetchIssues, storeType, group_by, sub_group_by, viewId, routeProjectId, isLinearProject]);
+  }, [
+    fetchIssues,
+    storeType,
+    group_by,
+    sub_group_by,
+    viewId,
+    routeProjectId,
+    isLinearProject,
+    linearLoadedProjectId,
+    isLinearProjectReady,
+  ]);
 
   const groupedIssueIds = useMemo(() => {
     const raw = issues?.groupedIssueIds;

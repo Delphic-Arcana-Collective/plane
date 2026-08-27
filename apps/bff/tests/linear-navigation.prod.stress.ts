@@ -101,6 +101,8 @@ async function waitForProjectReady(page: Page, projectId: string, timeoutMs: num
   );
 
   const deadline = Date.now() + timeoutMs;
+  let stableReady = 0;
+
   while (Date.now() < deadline) {
     const state = await page.evaluate(() => {
       const loading = !!document.querySelector('[class*="layout-loader"], [class*="ListLayoutLoader"]');
@@ -111,21 +113,24 @@ async function waitForProjectReady(page: Page, projectId: string, timeoutMs: num
     });
 
     if (state.loading) {
+      stableReady = 0;
       await sleep(150);
       continue;
     }
 
-    if (state.headerCount === 0 && state.issueBlocks === 0) {
-      await sleep(150);
-      continue;
+    const ready =
+      (state.headerCount === 0 && state.issueBlocks === 0) ||
+      (state.headerCount > 0 && state.issueBlocks > 0) ||
+      (state.headerCount === 0 && state.issueBlocks > 0);
+
+    if (ready) {
+      stableReady++;
+      if (stableReady >= 3) return state;
+    } else {
+      stableReady = 0;
     }
 
-    if (state.headerCount > 0 && state.issueBlocks === 0) {
-      await sleep(150);
-      continue;
-    }
-
-    return state;
+    await sleep(200);
   }
 
   throw new Error(`Project ${projectId} did not become ready in ${timeoutMs}ms`);

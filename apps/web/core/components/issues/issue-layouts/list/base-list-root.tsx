@@ -101,9 +101,17 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
     issueFiltersForView?.kanbanFilters || ({ group_by: [], sub_group_by: [] } as TIssueKanbanFilters);
 
   const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly();
+  const linearLoadedProjectId = isLinearProject && "loadedProjectId" in issues ? issues.loadedProjectId : null;
+  const isLinearProjectReady =
+    isLinearProject && routeProjectId && "isProjectViewReady" in issues
+      ? issues.isProjectViewReady(routeProjectId)
+      : true;
 
   useEffect(() => {
     if (!displayFilters || !workspaceSlugStr || !routeProjectId) return;
+    if (isLinearProject && linearLoadedProjectId === routeProjectId && isLinearProjectReady) {
+      return;
+    }
     fetchIssues(
       "init-loader",
       { canGroup: !isLinearProject, perPageCount: isLinearProject ? 100 : group_by ? 50 : 100 },
@@ -119,6 +127,8 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
     workspaceSlugStr,
     routeProjectId,
     isLinearProject,
+    linearLoadedProjectId,
+    isLinearProjectReady,
   ]);
 
   const groupedIssueIds = useMemo(() => {
