@@ -12,6 +12,7 @@ import { setCustomNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/el
 import { attachInstruction, extractInstruction } from "@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item";
 import { observer } from "mobx-react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { createRoot } from "react-dom/client";
 import scrollIntoView from "smooth-scroll-into-view-if-needed";
 import { Settings, Share2, LogOut, MoreHorizontal } from "lucide-react";
@@ -26,6 +27,7 @@ import { IconButton } from "@plane/propel/icon-button";
 import { Tooltip } from "@plane/propel/tooltip";
 import { CustomMenu, DropIndicator, DragHandle, ControlLink } from "@plane/ui";
 import { cn } from "@plane/utils";
+import { isLinearDisplayMode, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // components
 import { DEFAULT_TAB_KEY, getTabUrl } from "@/components/navigation/tab-navigation-utils";
 import { useTabPreferences } from "@/components/navigation/use-tab-preferences";
@@ -76,7 +78,8 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   const { allowPermissions } = useUserPermissions();
   const { getIsProjectListOpen, toggleProjectListOpen } = useCommandPalette();
   const { preferences: projectPreferences } = useProjectNavigationPreferences();
-  const { isExtendedProjectSidebarOpened, toggleExtendedProjectSidebar, toggleAnySidebarDropdown } = useAppTheme();
+  const { isExtendedProjectSidebarOpened, toggleExtendedProjectSidebar, toggleAnySidebarDropdown, toggleSidebar } =
+    useAppTheme();
 
   // states
   const [leaveProjectModalOpen, setLeaveProjectModal] = useState(false);
@@ -94,6 +97,11 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   const router = useRouter();
   // derived values
   const project = getPartialProjectById(projectId);
+  const isLinearMode = isLinearDisplayMode();
+  const encodedProjectId = encodeURIComponent(projectId);
+  const linearIssuesUrl = `/${workspaceSlug}/projects/${encodedProjectId}/issues`;
+  const activeProjectId = URLProjectId?.toString() ? decodeURIComponent(URLProjectId.toString()) : undefined;
+  const isProjectSelected = activeProjectId === project?.id;
 
   // Get available navigation items for this project
   const navigationItems = useNavigationItems({
@@ -236,7 +244,7 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-    if (URLProjectId === project?.id) {
+    if (activeProjectId === project?.id && !isLinearMode) {
       setIsProjectListOpen(true);
       // Scroll to active project
       if (projectRef.current) {
@@ -257,13 +265,26 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
         clearTimeout(timeoutId);
       }
     };
-  }, [URLProjectId, project?.id, setIsProjectListOpen]);
+  }, [activeProjectId, project?.id, setIsProjectListOpen, isLinearMode]);
 
   if (!project) return null;
 
-  const isAccordionMode = projectPreferences.navigationMode === "ACCORDION";
+  const isAccordionMode = !isLinearMode && projectPreferences.navigationMode === "ACCORDION";
 
-  const handleItemClick = () => {
+  const handleLinearLinkClick = () => {
+    if (isExtendedProjectSidebarOpened) {
+      toggleExtendedProjectSidebar(false);
+    }
+    if (window.innerWidth < 768) {
+      toggleSidebar();
+    }
+  };
+
+  const handleItemClick = (_event?: React.MouseEvent) => {
+    if (isLinearMode) {
+      return;
+    }
+
     if (projectPreferences.navigationMode === "ACCORDION") {
       setIsProjectListOpen(!isProjectListOpen);
     } else {
@@ -275,7 +296,9 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
     }
   };
 
-  const shouldHighlightProject = URLProjectId === project?.id && projectPreferences.navigationMode !== "ACCORDION";
+  const shouldHighlightProject =
+    isProjectSelected && (isLinearMode || projectPreferences.navigationMode !== "ACCORDION");
+  const projectLinkUrl = isLinearMode ? linearIssuesUrl : defaultTabUrl;
 
   return (
     <>
@@ -326,59 +349,72 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
               </Tooltip>
             )}
             <>
-              <ControlLink href={defaultTabUrl} className="flex flex-grow truncate" onClick={handleItemClick}>
-                {isAccordionMode ? (
-                  <Disclosure.Button
-                    as="button"
-                    type="button"
-                    className={cn("flex w-full flex-grow items-center gap-1.5 text-left select-none", {})}
-                    aria-label={
-                      isProjectListOpen
-                        ? t("aria_labels.projects_sidebar.close_project_menu")
-                        : t("aria_labels.projects_sidebar.open_project_menu")
-                    }
-                  >
-                    <div className="grid size-4 flex-shrink-0 place-items-center">
-                      <Logo logo={project.logo_props} size={16} />
-                    </div>
-                    <p className="truncate text-13 font-medium text-secondary">{project.name}</p>
-                  </Disclosure.Button>
-                ) : (
+              {isLinearMode ? (
+                <Link href={linearIssuesUrl} className="flex flex-grow truncate" onClick={handleLinearLinkClick}>
                   <div className="flex w-full flex-grow items-center gap-1.5 text-left select-none">
                     <div className="grid size-4 flex-shrink-0 place-items-center">
                       <Logo logo={project.logo_props} size={16} />
                     </div>
                     <p className="truncate text-13 font-medium text-secondary">{project.name}</p>
                   </div>
-                )}
-              </ControlLink>
-              <div className="flex items-center gap-1">
-                <CustomMenu
-                  customButton={
-                    <IconButton
-                      ref={actionSectionRef}
-                      variant="ghost"
-                      size="sm"
-                      icon={MoreHorizontal}
-                      onClick={() => setIsMenuActive(!isMenuActive)}
-                      className="text-placeholder"
-                    />
-                  }
-                  className={cn(
-                    "pointer-events-none flex-shrink-0 opacity-0 group-hover/project-item:pointer-events-auto group-hover/project-item:opacity-100",
-                    {
-                      "pointer-events-auto opacity-100": isMenuActive,
-                    }
+                </Link>
+              ) : (
+                <ControlLink href={projectLinkUrl} className="flex flex-grow truncate" onClick={handleItemClick}>
+                  {isAccordionMode ? (
+                    <Disclosure.Button
+                      as="button"
+                      type="button"
+                      className={cn("flex w-full flex-grow items-center gap-1.5 text-left select-none", {})}
+                      aria-label={
+                        isProjectListOpen
+                          ? t("aria_labels.projects_sidebar.close_project_menu")
+                          : t("aria_labels.projects_sidebar.open_project_menu")
+                      }
+                    >
+                      <div className="grid size-4 flex-shrink-0 place-items-center">
+                        <Logo logo={project.logo_props} size={16} />
+                      </div>
+                      <p className="truncate text-13 font-medium text-secondary">{project.name}</p>
+                    </Disclosure.Button>
+                  ) : (
+                    <div className="flex w-full flex-grow items-center gap-1.5 text-left select-none">
+                      <div className="grid size-4 flex-shrink-0 place-items-center">
+                        <Logo logo={project.logo_props} size={16} />
+                      </div>
+                      <p className="truncate text-13 font-medium text-secondary">{project.name}</p>
+                    </div>
                   )}
-                  customButtonClassName="grid place-items-center"
-                  placement="bottom-start"
-                  ariaLabel={t("aria_labels.projects_sidebar.toggle_quick_actions_menu")}
-                  useCaptureForOutsideClick
-                  closeOnSelect
-                  onMenuClose={() => setIsMenuActive(false)}
-                >
-                  {/* TODO: Removed is_favorite logic due to the optimization in projects API */}
-                  {/* {isAuthorized && (
+                </ControlLink>
+              )}
+              <div className="flex items-center gap-1">
+                {/* TODO(linear-display): Re-enable project quick actions (publish, copy link, settings, etc.) when write support is added. */}
+                {!isLinearReadOnly() && (
+                  <CustomMenu
+                    customButton={
+                      <IconButton
+                        ref={actionSectionRef}
+                        variant="ghost"
+                        size="sm"
+                        icon={MoreHorizontal}
+                        onClick={() => setIsMenuActive(!isMenuActive)}
+                        className="text-placeholder"
+                      />
+                    }
+                    className={cn(
+                      "pointer-events-none flex-shrink-0 opacity-0 group-hover/project-item:pointer-events-auto group-hover/project-item:opacity-100",
+                      {
+                        "pointer-events-auto opacity-100": isMenuActive,
+                      }
+                    )}
+                    customButtonClassName="grid place-items-center"
+                    placement="bottom-start"
+                    ariaLabel={t("aria_labels.projects_sidebar.toggle_quick_actions_menu")}
+                    useCaptureForOutsideClick
+                    closeOnSelect
+                    onMenuClose={() => setIsMenuActive(false)}
+                  >
+                    {/* TODO: Removed is_favorite logic due to the optimization in projects API */}
+                    {/* {isAuthorized && (
                     <CustomMenu.MenuItem
                       onClick={project.is_favorite ? handleRemoveFromFavorites : handleAddToFavorites}
                     >
@@ -393,55 +429,56 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
                     </CustomMenu.MenuItem>
                   )} */}
 
-                  {/* publish project settings */}
-                  {isAdmin && (
-                    <CustomMenu.MenuItem onClick={() => setPublishModal(true)}>
-                      <div className="relative flex flex-shrink-0 items-center justify-start gap-2">
-                        <div className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-sm text-secondary transition-all duration-300 hover:bg-layer-1">
-                          <Share2 className="h-3.5 w-3.5 stroke-[1.5]" />
+                    {/* publish project settings */}
+                    {isAdmin && (
+                      <CustomMenu.MenuItem onClick={() => setPublishModal(true)}>
+                        <div className="relative flex flex-shrink-0 items-center justify-start gap-2">
+                          <div className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-sm text-secondary transition-all duration-300 hover:bg-layer-1">
+                            <Share2 className="h-3.5 w-3.5 stroke-[1.5]" />
+                          </div>
+                          <div>{t("publish_project")}</div>
                         </div>
-                        <div>{t("publish_project")}</div>
-                      </div>
+                      </CustomMenu.MenuItem>
+                    )}
+                    <CustomMenu.MenuItem onClick={handleCopyText}>
+                      <span className="flex items-center justify-start gap-2">
+                        <LinkIcon className="h-3.5 w-3.5 stroke-[1.5]" />
+                        <span>{t("copy_link")}</span>
+                      </span>
                     </CustomMenu.MenuItem>
-                  )}
-                  <CustomMenu.MenuItem onClick={handleCopyText}>
-                    <span className="flex items-center justify-start gap-2">
-                      <LinkIcon className="h-3.5 w-3.5 stroke-[1.5]" />
-                      <span>{t("copy_link")}</span>
-                    </span>
-                  </CustomMenu.MenuItem>
-                  {isAuthorized && (
+                    {isAuthorized && (
+                      <CustomMenu.MenuItem
+                        onClick={() => {
+                          router.push(`/${workspaceSlug}/projects/${project?.id}/archives/issues`);
+                        }}
+                      >
+                        <div className="flex cursor-pointer items-center justify-start gap-2">
+                          <ArchiveIcon className="h-3.5 w-3.5 stroke-[1.5]" />
+                          <span>{t("archives")}</span>
+                        </div>
+                      </CustomMenu.MenuItem>
+                    )}
                     <CustomMenu.MenuItem
                       onClick={() => {
-                        router.push(`/${workspaceSlug}/projects/${project?.id}/archives/issues`);
+                        router.push(`/${workspaceSlug}/settings/projects/${project?.id}`);
                       }}
                     >
                       <div className="flex cursor-pointer items-center justify-start gap-2">
-                        <ArchiveIcon className="h-3.5 w-3.5 stroke-[1.5]" />
-                        <span>{t("archives")}</span>
+                        <Settings className="h-3.5 w-3.5 stroke-[1.5]" />
+                        <span>{t("settings")}</span>
                       </div>
                     </CustomMenu.MenuItem>
-                  )}
-                  <CustomMenu.MenuItem
-                    onClick={() => {
-                      router.push(`/${workspaceSlug}/settings/projects/${project?.id}`);
-                    }}
-                  >
-                    <div className="flex cursor-pointer items-center justify-start gap-2">
-                      <Settings className="h-3.5 w-3.5 stroke-[1.5]" />
-                      <span>{t("settings")}</span>
-                    </div>
-                  </CustomMenu.MenuItem>
-                  {/* leave project */}
-                  {!isAuthorized && (
-                    <CustomMenu.MenuItem onClick={handleLeaveProject}>
-                      <div className="flex items-center justify-start gap-2">
-                        <LogOut className="h-3.5 w-3.5 stroke-[1.5]" />
-                        <span>{t("leave_project")}</span>
-                      </div>
-                    </CustomMenu.MenuItem>
-                  )}
-                </CustomMenu>
+                    {/* leave project */}
+                    {!isAuthorized && (
+                      <CustomMenu.MenuItem onClick={handleLeaveProject}>
+                        <div className="flex items-center justify-start gap-2">
+                          <LogOut className="h-3.5 w-3.5 stroke-[1.5]" />
+                          <span>{t("leave_project")}</span>
+                        </div>
+                      </CustomMenu.MenuItem>
+                    )}
+                  </CustomMenu>
+                )}
                 {isAccordionMode && (
                   <IconButton
                     variant="ghost"

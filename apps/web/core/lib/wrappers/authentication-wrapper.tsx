@@ -12,6 +12,7 @@ import useSWR from "swr";
 import { LogoSpinner } from "@/components/common/logo-spinner";
 // helpers
 import { EPageTypes } from "@/helpers/authentication.helper";
+import { getLinearWorkspaceSlug, isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // hooks
 import { useWorkspace } from "@/hooks/store/use-workspace";
 import { useUser, useUserProfile, useUserSettings } from "@/hooks/store/user";
@@ -57,6 +58,11 @@ export const AuthenticationWrapper = observer(function AuthenticationWrapper(pro
 
   const getWorkspaceRedirectionUrl = (): string => {
     let redirectionRoute = "/create-workspace";
+
+    // Linear display mode: skip workspace discovery, go straight to configured slug
+    if (isLinearDisplayMode()) {
+      return `/${getLinearWorkspaceSlug()}`;
+    }
 
     // validating the nextPath from the router query
     if (nextPath && isValidURL(nextPath.toString())) {

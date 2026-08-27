@@ -12,8 +12,9 @@ import { autoScrollForElements } from "@atlaskit/pragmatic-drag-and-drop-auto-sc
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
-import type { EIssuesStoreType } from "@plane/types";
+import type { EIssuesStoreType, GroupByColumnTypes, TGroupedIssues } from "@plane/types";
 import { EIssueServiceType, EIssueLayoutTypes } from "@plane/types";
+import { decodeRouteProjectId, isLinearReadOnly, resolveLinearGroupedIssueIds } from "@/helpers/linear-display.helper";
 //hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
@@ -62,7 +63,8 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
     isEpic = false,
   } = props;
   // router
-  const { workspaceSlug, projectId } = useParams();
+  const { workspaceSlug, projectId: routeProjectIdParam } = useParams();
+  const routeProjectId = decodeRouteProjectId(routeProjectIdParam?.toString());
   // store hooks
   const storeType = useIssueStoreType() as KanbanStoreType;
   const { allowPermissions } = useUserPermissions();
@@ -87,17 +89,60 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
 
   const { isDragging } = useKanbanView();
 
-  const displayFilters = issuesFilter?.issueFilters?.displayFilters;
-  const displayProperties = issuesFilter?.issueFilters?.displayProperties;
+  const issueFiltersForView =
+    storeType === EIssuesStoreType.PROJECT && routeProjectId && issuesFilter && "getIssueFilters" in issuesFilter
+      ? issuesFilter.getIssueFilters(routeProjectId)
+      : issuesFilter?.issueFilters;
+
+  const displayFilters = issueFiltersForView?.displayFilters;
+  const displayProperties = issueFiltersForView?.displayProperties;
 
   const sub_group_by = displayFilters?.sub_group_by;
   const group_by = displayFilters?.group_by;
 
   const orderBy = displayFilters?.order_by;
+  const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly();
+  const linearLoadedProjectId = isLinearProject && "loadedProjectId" in issues ? issues.loadedProjectId : null;
+  const linearHydratedProjectId =
+    isLinearProject && "linearHydratedProjectId" in issues ? issues.linearHydratedProjectId : null;
 
   useEffect(() => {
-    fetchIssues("init-loader", { canGroup: true, perPageCount: sub_group_by ? 10 : 30 }, viewId);
-  }, [fetchIssues, storeType, group_by, sub_group_by, viewId]);
+    if (storeType === EIssuesStoreType.PROJECT && !routeProjectId) return;
+    if (isLinearProject && routeProjectId && linearLoadedProjectId === routeProjectId) {
+      return;
+    }
+    if (isLinearProject && routeProjectId && linearHydratedProjectId === routeProjectId) {
+      if ("ensureLinearProjectIssuesGrouped" in issues) {
+        issues.ensureLinearProjectIssuesGrouped(routeProjectId);
+      }
+      return;
+    }
+    fetchIssues(
+      "init-loader",
+      { canGroup: !isLinearProject, perPageCount: isLinearProject ? 100 : sub_group_by ? 10 : 30 },
+      viewId
+    );
+  }, [
+    fetchIssues,
+    storeType,
+    group_by,
+    sub_group_by,
+    viewId,
+    routeProjectId,
+    isLinearProject,
+    linearLoadedProjectId,
+    linearHydratedProjectId,
+    issues,
+  ]);
+
+  const groupedIssueIds = (() => {
+    const raw = issues?.groupedIssueIds as TGroupedIssues | undefined;
+    if (!raw) return undefined;
+    if (isLinearProject && group_by) {
+      return resolveLinearGroupedIssueIds(raw, issueMap, group_by as GroupByColumnTypes);
+    }
+    return raw;
+  })();
 
   const fetchMoreIssues = useCallback(
     (groupId?: string, subgroupId?: string) => {
@@ -105,10 +150,8 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
         fetchNextIssues(groupId, subgroupId);
       }
     },
-    [fetchNextIssues]
+    [fetchNextIssues, issues]
   );
-
-  const groupedIssueIds = issues?.groupedIssueIds;
 
   const userDisplayFilters = displayFilters || null;
 
@@ -130,9 +173,11 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
   const handleOnDrop = useGroupIssuesDragNDrop(storeType, orderBy, group_by, sub_group_by);
 
   const canEditProperties = useCallback(
-    (projectId: string | undefined) => {
+    (targetProjectId: string | undefined) => {
       const isEditingAllowedBasedOnProject =
-        canEditPropertiesBasedOnProject && projectId ? canEditPropertiesBasedOnProject(projectId) : isEditingAllowed;
+        canEditPropertiesBasedOnProject && targetProjectId
+          ? canEditPropertiesBasedOnProject(targetProjectId)
+          : isEditingAllowed;
 
       return enableInlineEditing && isEditingAllowedBasedOnProject;
     },
@@ -228,7 +273,7 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
         });
       }
     },
-    [workspaceSlug, issuesFilter, projectId, updateFilters]
+    [workspaceSlug, issuesFilter, updateFilters]
   );
 
   const collapsedGroups = issuesFilter?.issueFilters?.kanbanFilters || { group_by: [], sub_group_by: [] };

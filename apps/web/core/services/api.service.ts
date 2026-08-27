@@ -7,6 +7,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { AxiosInstance, AxiosRequestConfig } from "axios";
 import { create } from "axios";
+// helpers
+import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
 
 export abstract class APIService {
   protected baseURL: string;
@@ -26,7 +28,8 @@ export abstract class APIService {
     this.axiosInstance.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response && error.response.status === 401) {
+        // TODO(auth): remove bypass when real authentication is wired up
+        if (error.response && error.response.status === 401 && !isLinearDisplayMode()) {
           const currentPath = window.location.pathname;
           window.location.replace(`/${currentPath ? `?next_path=${currentPath}` : ``}`);
         }

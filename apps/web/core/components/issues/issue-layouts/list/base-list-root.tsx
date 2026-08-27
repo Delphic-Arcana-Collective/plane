@@ -11,8 +11,14 @@ import { useParams } from "next/navigation";
 // plane constants
 import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 // types
-import type { EIssuesStoreType, GroupByColumnTypes, TGroupedIssues, TIssueKanbanFilters } from "@plane/types";
-import { EIssueLayoutTypes } from "@plane/types";
+import {
+  EIssueLayoutTypes,
+  EIssuesStoreType,
+  type GroupByColumnTypes,
+  type TGroupedIssues,
+  type TIssueKanbanFilters,
+} from "@plane/types";
+import { decodeRouteProjectId, isLinearReadOnly, resolveLinearGroupedIssueIds } from "@/helpers/linear-display.helper";
 // constants
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
@@ -74,23 +80,73 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
   const { allowPermissions } = useUserPermissions();
   const { issueMap } = useIssues();
 
-  const displayFilters = issuesFilter?.issueFilters?.displayFilters;
-  const displayProperties = issuesFilter?.issueFilters?.displayProperties;
+  const { workspaceSlug, projectId: routeProjectIdParam } = useParams();
+  const workspaceSlugStr = workspaceSlug?.toString();
+  const routeProjectId = decodeRouteProjectId(routeProjectIdParam?.toString());
+
+  const issueFiltersForView =
+    storeType === EIssuesStoreType.PROJECT && routeProjectId && issuesFilter && "getIssueFilters" in issuesFilter
+      ? issuesFilter.getIssueFilters(routeProjectId)
+      : issuesFilter?.issueFilters;
+
+  const displayFilters = issueFiltersForView?.displayFilters;
+  const displayProperties = issueFiltersForView?.displayProperties;
   const orderBy = displayFilters?.order_by || undefined;
 
   const group_by = (displayFilters?.group_by || null) as GroupByColumnTypes | null;
   const showEmptyGroup = displayFilters?.show_empty_groups ?? false;
-
-  const { workspaceSlug, projectId } = useParams();
+  const layout = displayFilters?.layout;
   const { updateFilters } = useIssuesActions(storeType);
   const collapsedGroups =
-    issuesFilter?.issueFilters?.kanbanFilters || ({ group_by: [], sub_group_by: [] } as TIssueKanbanFilters);
+    issueFiltersForView?.kanbanFilters || ({ group_by: [], sub_group_by: [] } as TIssueKanbanFilters);
+
+  const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly();
+  const linearLoadedProjectId = isLinearProject && "loadedProjectId" in issues ? issues.loadedProjectId : null;
+  const linearHydratedProjectId =
+    isLinearProject && "linearHydratedProjectId" in issues ? issues.linearHydratedProjectId : null;
 
   useEffect(() => {
-    fetchIssues("init-loader", { canGroup: true, perPageCount: group_by ? 50 : 100 }, viewId);
-  }, [fetchIssues, storeType, group_by, viewId]);
+    if (!displayFilters || !workspaceSlugStr || !routeProjectId) return;
+    if (isLinearProject && linearLoadedProjectId === routeProjectId) {
+      return;
+    }
+    if (isLinearProject && linearHydratedProjectId === routeProjectId) {
+      // Payload committed; re-normalize when states/columns catch up — do not refetch.
+      if ("ensureLinearProjectIssuesGrouped" in issues) {
+        issues.ensureLinearProjectIssuesGrouped(routeProjectId);
+      }
+      return;
+    }
+    fetchIssues(
+      "init-loader",
+      { canGroup: !isLinearProject, perPageCount: isLinearProject ? 100 : group_by ? 50 : 100 },
+      viewId
+    );
+  }, [
+    fetchIssues,
+    storeType,
+    group_by,
+    viewId,
+    layout,
+    displayFilters,
+    workspaceSlugStr,
+    routeProjectId,
+    isLinearProject,
+    linearLoadedProjectId,
+    linearHydratedProjectId,
+    issues,
+  ]);
 
-  const groupedIssueIds = issues?.groupedIssueIds as TGroupedIssues | undefined;
+  // Trust store commit for Linear; only derive buckets when the store still has a flat payload.
+  // Compute in the observer body (not useMemo) so MobX tracks issueMap reads.
+  const groupedIssueIds = (() => {
+    const raw = issues?.groupedIssueIds as TGroupedIssues | undefined;
+    if (!raw) return undefined;
+    if (isLinearProject && group_by) {
+      return resolveLinearGroupedIssueIds(raw, issueMap, group_by);
+    }
+    return raw;
+  })();
   // auth
   const isEditingAllowed = allowPermissions(
     [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
@@ -99,9 +155,11 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
   const { enableInlineEditing, enableQuickAdd, enableIssueCreation } = issues?.viewFlags || {};
 
   const canEditProperties = useCallback(
-    (projectId: string | undefined) => {
+    (targetProjectId: string | undefined) => {
       const isEditingAllowedBasedOnProject =
-        canEditPropertiesBasedOnProject && projectId ? canEditPropertiesBasedOnProject(projectId) : isEditingAllowed;
+        canEditPropertiesBasedOnProject && targetProjectId
+          ? canEditPropertiesBasedOnProject(targetProjectId)
+          : isEditingAllowed;
 
       return !!enableInlineEditing && isEditingAllowedBasedOnProject;
     },
@@ -137,19 +195,19 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
   // kanbanFilters and EIssueFilterType.KANBAN_FILTERS are used because the state is shared between kanban view and list view
   const handleCollapsedGroups = useCallback(
     (value: string) => {
-      if (workspaceSlug) {
-        let collapsedGroups = issuesFilter?.issueFilters?.kanbanFilters?.group_by || [];
-        if (collapsedGroups.includes(value)) {
-          collapsedGroups = collapsedGroups.filter((_value) => _value != value);
+      if (workspaceSlugStr) {
+        let collapsedGroupIds = issueFiltersForView?.kanbanFilters?.group_by || [];
+        if (collapsedGroupIds.includes(value)) {
+          collapsedGroupIds = collapsedGroupIds.filter((_value) => _value != value);
         } else {
-          collapsedGroups.push(value);
+          collapsedGroupIds.push(value);
         }
-        updateFilters(projectId?.toString() ?? "", EIssueFilterType.KANBAN_FILTERS, {
-          group_by: collapsedGroups,
+        updateFilters(routeProjectId ?? "", EIssueFilterType.KANBAN_FILTERS, {
+          group_by: collapsedGroupIds,
         } as TIssueKanbanFilters);
       }
     },
-    [workspaceSlug, issuesFilter, projectId, updateFilters]
+    [workspaceSlugStr, issueFiltersForView, routeProjectId, updateFilters]
   );
 
   return (

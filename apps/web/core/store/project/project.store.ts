@@ -17,6 +17,7 @@ import { IssueLabelService, IssueService } from "@/services/issue";
 import { ProjectService, ProjectStateService, ProjectArchiveService } from "@/services/project";
 // store
 import type { CoreRootStore } from "../root.store";
+import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
 
 type ProjectOverviewCollapsible = "links" | "attachments" | "milestones";
 
@@ -309,12 +310,26 @@ export class ProjectStore implements IProjectStore {
    */
   fetchPartialProjects = async (workspaceSlug: string) => {
     try {
-      this.loader = "init-loader";
+      const hasProjects = (this.workspaceProjectIds?.length ?? 0) > 0;
+      this.loader = hasProjects ? "mutation" : "init-loader";
       const projectsResponse = await this.projectService.getProjectsLite(workspaceSlug);
       runInAction(() => {
+        const workspaceDetails = this.rootStore.workspaceRoot.currentWorkspace;
+        const responseIds = new Set(projectsResponse.map((project) => project.id));
+
         projectsResponse.forEach((project) => {
           update(this.projectMap, [project.id], (p) => ({ ...p, ...project }));
         });
+
+        if (isLinearDisplayMode() && workspaceDetails) {
+          for (const projectId of Object.keys(this.projectMap)) {
+            const project = this.projectMap[projectId];
+            if (project.workspace === workspaceDetails.id && !responseIds.has(projectId)) {
+              delete this.projectMap[projectId];
+            }
+          }
+        }
+
         this.loader = "loaded";
         if (!this.fetchStatus) this.fetchStatus = "partial";
       });
@@ -607,6 +622,7 @@ export class ProjectStore implements IProjectStore {
           set(this.projectMap, [projectId, "archived_at"], response.archived_at);
           this.rootStore.favorite.removeFavoriteFromStore(projectId);
         });
+        return undefined;
       })
       .catch((error) => {
         console.log("Failed to archive project from project store");
@@ -627,6 +643,7 @@ export class ProjectStore implements IProjectStore {
         runInAction(() => {
           set(this.projectMap, [projectId, "archived_at"], null);
         });
+        return undefined;
       })
       .catch((error) => {
         console.log("Failed to restore project from project store");

@@ -60,6 +60,8 @@ htmlcov/
 .coverage
 
 node_modules/
+# Cloudflare Wrangler local state (D1/KV/cache sqlite)
+**/.wrangler/
 assets/dist/
 npm-debug.log
 yarn-error.log

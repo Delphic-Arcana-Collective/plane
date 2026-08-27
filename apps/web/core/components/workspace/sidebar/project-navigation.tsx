@@ -20,6 +20,7 @@ import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
 import { useUserPermissions } from "@/hooks/store/user";
+import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
 
 export type TNavigationItem = {
   name: string;
@@ -30,6 +31,7 @@ export type TNavigationItem = {
   sortOrder: number;
   i18n_key: string;
   key: string;
+  isDisabled?: boolean;
 };
 
 type TProjectItemsProps = {
@@ -69,87 +71,101 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
   };
 
   const baseNavigation = useCallback(
-    (workspaceSlug: string, projectId: string): TNavigationItem[] => [
-      {
-        i18n_key: "sidebar.work_items",
-        key: "work_items",
-        name: "Work items",
-        href: `/${workspaceSlug}/projects/${projectId}/issues`,
-        icon: WorkItemsIcon,
-        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
-        shouldRender: true,
-        sortOrder: 1,
-      },
-      {
-        i18n_key: "sidebar.cycles",
-        key: "cycles",
-        name: "Cycles",
-        href: `/${workspaceSlug}/projects/${projectId}/cycles`,
-        icon: CycleIcon,
-        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
-        shouldRender: project?.cycle_view ?? false,
-        sortOrder: 2,
-      },
-      {
-        i18n_key: "sidebar.modules",
-        key: "modules",
-        name: "Modules",
-        href: `/${workspaceSlug}/projects/${projectId}/modules`,
-        icon: ModuleIcon,
-        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
-        shouldRender: project?.module_view ?? false,
-        sortOrder: 3,
-      },
-      {
-        i18n_key: "sidebar.views",
-        key: "views",
-        name: "Views",
-        href: `/${workspaceSlug}/projects/${projectId}/views`,
-        icon: ViewsIcon,
-        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
-        shouldRender: project?.issue_views_view ?? false,
-        sortOrder: 4,
-      },
-      {
-        i18n_key: "sidebar.pages",
-        key: "pages",
-        name: "Pages",
-        href: `/${workspaceSlug}/projects/${projectId}/pages`,
-        icon: PageIcon,
-        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
-        shouldRender: project?.page_view ?? false,
-        sortOrder: 5,
-      },
-      {
-        i18n_key: "sidebar.intake",
-        key: "intake",
-        name: "Intake",
-        href: `/${workspaceSlug}/projects/${projectId}/intake`,
-        icon: IntakeIcon,
-        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
-        shouldRender: project?.inbox_view ?? false,
-        sortOrder: 6,
-      },
-    ],
+    (slug: string, projId: string): TNavigationItem[] => {
+      const encodedProjectId = encodeURIComponent(projId);
+      return [
+        {
+          i18n_key: "sidebar.work_items",
+          key: "work_items",
+          name: "Work items",
+          href: `/${slug}/projects/${encodedProjectId}/issues`,
+          icon: WorkItemsIcon,
+          access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+          shouldRender: true,
+          sortOrder: 1,
+        },
+        {
+          i18n_key: "sidebar.cycles",
+          key: "cycles",
+          name: "Cycles",
+          href: `/${slug}/projects/${encodedProjectId}/cycles`,
+          icon: CycleIcon,
+          access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
+          shouldRender: project?.cycle_view ?? false,
+          sortOrder: 2,
+        },
+        {
+          i18n_key: "sidebar.modules",
+          key: "modules",
+          name: "Modules",
+          href: `/${slug}/projects/${encodedProjectId}/modules`,
+          icon: ModuleIcon,
+          access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
+          shouldRender: project?.module_view ?? false,
+          sortOrder: 3,
+        },
+        {
+          i18n_key: "sidebar.views",
+          key: "views",
+          name: "Views",
+          href: `/${slug}/projects/${encodedProjectId}/views`,
+          icon: ViewsIcon,
+          access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+          shouldRender: project?.issue_views_view ?? false,
+          sortOrder: 4,
+        },
+        {
+          i18n_key: "sidebar.pages",
+          key: "pages",
+          name: "Pages",
+          href: `/${slug}/projects/${encodedProjectId}/pages`,
+          icon: PageIcon,
+          access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+          shouldRender: project?.page_view ?? false,
+          sortOrder: 5,
+        },
+        {
+          i18n_key: "sidebar.intake",
+          key: "intake",
+          name: "Intake",
+          href: `/${slug}/projects/${encodedProjectId}/intake`,
+          icon: IntakeIcon,
+          access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+          shouldRender: project?.inbox_view ?? false,
+          sortOrder: 6,
+        },
+      ];
+    },
     [project]
   );
 
   // memoized navigation items and adding additional navigation items
   const navigationItemsMemo = useMemo(() => {
-    const navigationItems = (workspaceSlug: string, projectId: string): TNavigationItem[] => {
-      const navItems = baseNavigation(workspaceSlug, projectId);
+    // TODO(linear-display): Re-enable work_items and views sidebar sub-navigation when needed.
+    if (isLinearDisplayMode()) return [];
+
+    const navigationItems = (slug: string, projId: string): TNavigationItem[] => {
+      const navItems = baseNavigation(slug, projId);
 
       if (additionalNavigationItems) {
-        navItems.push(...additionalNavigationItems(workspaceSlug, projectId));
+        navItems.push(...additionalNavigationItems(slug, projId));
       }
 
       return navItems;
     };
 
     // sort navigation items by sortOrder
-    const sortedNavigationItems = navigationItems(workspaceSlug, projectId).sort(
-      (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)
-    );
+    const sortedNavigationItems = navigationItems(workspaceSlug, projectId)
+      /*
+      // TODO(linear-display): Re-enable when views tab is supported.
+      .filter((item) => {
+        if (isLinearDisplayMode()) {
+          if (item.key !== "work_items" && item.key !== "views") return false;
+        }
+        return true;
+      })
+      */
+      .toSorted((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
     return sortedNavigationItems;
   }, [workspaceSlug, projectId, baseNavigation, additionalNavigationItems]);
@@ -171,6 +187,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
     [pathname, workItem, workItemId, projectId]
   );
 
+  if (isLinearDisplayMode()) return null;
   if (!project) return null;
 
   return (
@@ -182,6 +199,23 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
         if (!hasAccess) return null;
 
         const shouldShowCount = item.key === "intake" && (project.intake_count ?? 0) > 0;
+
+        if (item.isDisabled) {
+          return (
+            <SidebarNavItem
+              key={item.key}
+              isActive={false}
+              className="pointer-events-none cursor-not-allowed opacity-60"
+            >
+              <div className="flex w-full items-center justify-between gap-1.5 py-[1px]">
+                <div className="flex items-center gap-1.5 text-tertiary">
+                  <item.icon className="size-4 flex-shrink-0 stroke-[1.5]" />
+                  <span className="text-11 font-medium">{t(item.i18n_key)}</span>
+                </div>
+              </div>
+            </SidebarNavItem>
+          );
+        }
 
         return (
           <Link key={item.key} href={item.href} onClick={handleProjectClick}>

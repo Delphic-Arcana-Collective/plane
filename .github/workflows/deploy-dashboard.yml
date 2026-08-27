@@ -1,0 +1,56 @@
+name: Deploy Dashboard (Pages)
+
+on:
+  push:
+    branches: [preview, main]
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deploy-dashboard.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: deploy-dashboard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web
+        run: pnpm turbo run build --filter=web
+        env:
+          VITE_API_BASE_URL: https://linear.delphic.studio
+          VITE_WEB_BASE_URL: https://dashboard.delphic.studio
+          VITE_LINEAR_DISPLAY_MODE: "true"
+          VITE_LINEAR_WORKSPACE_SLUG: delphic
+
+      # Use apps/bff/wrangler.toml account_id (avoid wrong CLOUDFLARE_ACCOUNT_ID in GitHub)
+      - name: Ensure Pages project exists
+        working-directory: apps/bff
+        run: pnpm exec wrangler pages project create delphic-dashboard --production-branch=preview || true
+
+      - name: Deploy Pages
+        working-directory: apps/bff
+        run: pnpm exec wrangler pages deploy ../web/build/client --project-name=delphic-dashboard --branch=${{ github.ref_name }}

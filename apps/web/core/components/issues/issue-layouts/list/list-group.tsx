@@ -118,6 +118,13 @@ export const ListGroup = observer(function ListGroup(props: Props) {
   const isWorkflowIssueCreationDisabled = getIsWorkflowWorkItemCreationDisabled(group.id);
 
   const groupIssueCount = getGroupIssueCount(group.id, undefined, false) ?? 0;
+  // Prefer committed row ids for visibility. Inflating with store counts alone paints
+  // group headers with zero issue-* rows (forbidden empty-ready state).
+  const effectiveGroupIssueCount = groupIssueIds?.length
+    ? Math.max(groupIssueIds.length, groupIssueCount)
+    : groupIssueIds
+      ? 0
+      : groupIssueCount;
   const nextPageResults = getPaginationData(group.id, undefined)?.nextPageResults;
   const isPaginating = !!getIssueLoader(group.id);
 
@@ -253,9 +260,9 @@ export const ListGroup = observer(function ListGroup(props: Props) {
   const isDropDisabled = isWorkflowDropDisabled || !!group.isDropDisabled;
 
   const isGroupByCreatedBy = group_by === "created_by";
-  const shouldExpand = (!!groupIssueCount && isExpanded) || !group_by;
+  const shouldExpand = (!!effectiveGroupIssueCount && isExpanded) || !group_by;
 
-  return validateEmptyIssueGroups(groupIssueCount) ? (
+  return validateEmptyIssueGroups(effectiveGroupIssueCount) ? (
     <div
       ref={groupRef}
       className={cn(`relative flex flex-shrink-0 flex-col`, {
@@ -265,7 +272,7 @@ export const ListGroup = observer(function ListGroup(props: Props) {
     >
       <Row
         className={cn("w-full flex-shrink-0 border-b border-subtle bg-layer-1 py-1 pr-3 hover:bg-layer-1-hover", {
-          "sticky top-0 z-[2]": isExpanded && groupIssueCount > 0,
+          "sticky top-0 z-[2]": isExpanded && effectiveGroupIssueCount > 0,
         })}
       >
         <HeaderGroupByCard
@@ -273,7 +280,7 @@ export const ListGroup = observer(function ListGroup(props: Props) {
           groupBy={group_by}
           icon={group.icon}
           title={group.name}
-          count={groupIssueCount}
+          count={effectiveGroupIssueCount}
           issuePayload={group.payload}
           canEditProperties={canEditProperties}
           disableIssueCreation={

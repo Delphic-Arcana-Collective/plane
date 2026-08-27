@@ -250,6 +250,7 @@ allowBuilds:
   msgpackr-extract: true
   turbo: true
   sharp: false
+  workerd: true
 
 minimumReleaseAgeExclude:
   - '@storybook/addon-docs@10.4.6'

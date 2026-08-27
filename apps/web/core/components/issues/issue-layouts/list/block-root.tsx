@@ -23,6 +23,7 @@ import { ListLoaderItemRow } from "@/components/ui/loader/layouts/list-layout-lo
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import type { TSelectionHelper } from "@/hooks/use-multiple-select";
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 // types
 import { HIGHLIGHT_CLASS, getIssueBlockId, isIssueNew } from "../utils";
 import { IssueBlock } from "./block";
@@ -127,9 +128,13 @@ export const IssueBlockRoot = observer(function IssueBlockRoot(props: Props) {
     issueBlockRef?.current?.classList?.remove(HIGHLIGHT_CLASS);
   });
 
-  if (!issueId || !issuesMap[issueId]?.created_at) return null;
+  // Plane-sourced issues may omit created_at; presence in the map is enough to paint.
+  if (!issueId || !issuesMap[issueId]) return null;
 
   const subIssues = subIssuesStore.subIssuesByIssueId(issueId);
+  // Linear read-only: paint issue-* rows immediately. RenderIfVisible would otherwise leave
+  // headerCount>0 with zero [id^=issue-] nodes until IntersectionObserver fires (forbidden).
+  const forceVisible = shouldRenderByDefault || isLinearReadOnly();
   return (
     <div className="relative" ref={issueBlockRef} id={getIssueBlockId(issueId, groupId)}>
       <DropIndicator classNames={"absolute top-0 z-[2]"} isVisible={instruction === "DRAG_OVER"} />
@@ -138,7 +143,8 @@ export const IssueBlockRoot = observer(function IssueBlockRoot(props: Props) {
         root={containerRef}
         classNames={`relative ${isLastChild && !isExpanded ? "" : "border-b border-b-subtle"}`}
         verticalOffset={100}
-        defaultValue={shouldRenderByDefault || (issuesMap[issueId] ? isIssueNew(issuesMap[issueId]) : false)}
+        defaultValue={forceVisible || (issuesMap[issueId] ? isIssueNew(issuesMap[issueId]) : false)}
+        forceRender={forceVisible}
         placeholderChildren={<ListLoaderItemRow shouldAnimate={false} renderForPlaceHolder defaultPropertyCount={4} />}
         shouldRecordHeights={isMobile}
       >

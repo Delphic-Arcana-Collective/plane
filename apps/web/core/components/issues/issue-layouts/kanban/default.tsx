@@ -6,6 +6,7 @@
 
 import type { MutableRefObject } from "react";
 import { observer } from "mobx-react";
+import { useParams } from "next/navigation";
 import type {
   GroupByColumnTypes,
   IGroupByColumn,
@@ -26,6 +27,7 @@ import { KanbanColumnLoader } from "@/components/ui/loader/layouts/kanban-layout
 // hooks
 import { useKanbanView } from "@/hooks/store/use-kanban-view";
 import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
+import { decodeRouteProjectId } from "@/helpers/linear-display.helper";
 // types
 // parent components
 import { useWorkFlowFDragNDrop } from "@/components/workflow";
@@ -100,6 +102,8 @@ export const KanBan = observer(function KanBan(props: IKanBan) {
   // i18n
   // store hooks
   const storeType = useIssueStoreType();
+  const { projectId: routeProjectIdParam } = useParams();
+  const routeProjectId = decodeRouteProjectId(routeProjectIdParam?.toString());
   const issueKanBanView = useKanbanView();
   // derived values
   const isDragDisabled = !issueKanBanView?.getCanUserDragDrop(group_by, sub_group_by);
@@ -111,18 +115,24 @@ export const KanBan = observer(function KanBan(props: IKanBan) {
     includeNone: true,
     isWorkspaceLevel: isWorkspaceLevel(storeType),
     isEpic: isEpic,
+    projectId: routeProjectId,
   });
 
   if (!list) return null;
 
   const visibilityGroupBy = (_list: IGroupByColumn): { showGroup: boolean; showIssues: boolean } => {
+    const idsInGroup = ((groupedIssueIds as TGroupedIssues)?.[_list.id] ?? []).length;
+    const storeCount = getGroupIssueCount(_list.id, undefined, false) ?? 0;
+    // Prefer committed row ids — store count alone must not show empty columns as populated.
+    const effectiveCount = idsInGroup > 0 ? Math.max(idsInGroup, storeCount) : idsInGroup;
+
     if (sub_group_by) {
       const groupVisibility = {
         showGroup: true,
         showIssues: true,
       };
       if (!showEmptyGroup) {
-        groupVisibility.showGroup = (getGroupIssueCount(_list.id, undefined, false) ?? 0) > 0;
+        groupVisibility.showGroup = effectiveCount > 0;
       }
       return groupVisibility;
     } else {
@@ -131,8 +141,7 @@ export const KanBan = observer(function KanBan(props: IKanBan) {
         showIssues: true,
       };
       if (!showEmptyGroup) {
-        if ((getGroupIssueCount(_list.id, undefined, false) ?? 0) > 0) groupVisibility.showGroup = true;
-        else groupVisibility.showGroup = false;
+        groupVisibility.showGroup = effectiveCount > 0;
       }
       if (collapsedGroups?.group_by.includes(_list.id)) groupVisibility.showIssues = false;
       return groupVisibility;

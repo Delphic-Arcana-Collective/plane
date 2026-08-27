@@ -22,6 +22,8 @@ export interface IStateStore {
   fetchedIntakeMap: Record<string, boolean>;
   // observables
   stateMap: Record<string, IState>;
+  /** projectId → state ids (Linear reuses workflow state ids across projects). */
+  projectStateIdsMap: Record<string, string[]>;
   intakeStateMap: Record<string, IIntakeState>;
   // computed
   workspaceStates: IState[] | undefined;
@@ -61,6 +63,7 @@ export interface IStateStore {
 
 export class StateStore implements IStateStore {
   stateMap: Record<string, IState> = {};
+  projectStateIdsMap: Record<string, string[]> = {};
   intakeStateMap: Record<string, IIntakeState> = {};
   //loaders
   fetchedMap: Record<string, boolean> = {};
@@ -73,6 +76,7 @@ export class StateStore implements IStateStore {
     makeObservable(this, {
       // observables
       stateMap: observable,
+      projectStateIdsMap: observable,
       intakeStateMap: observable,
       fetchedMap: observable,
       fetchedIntakeMap: observable,
@@ -162,6 +166,20 @@ export class StateStore implements IStateStore {
   getProjectStates = computedFn((projectId: string | null | undefined) => {
     const workspaceSlug = this.router.workspaceSlug || "";
     if (!projectId || !(this.fetchedMap[projectId] || this.fetchedMap[workspaceSlug])) return;
+
+    // Prefer project-scoped id index — Linear workflow states share ids across projects, so
+    // stateMap[state.id].project_id is last-write-wins and cannot be filtered alone.
+    const indexedIds = this.projectStateIdsMap[projectId];
+    if (indexedIds?.length) {
+      const states: IState[] = [];
+      for (const stateId of indexedIds) {
+        const state = this.stateMap[stateId];
+        if (!state) continue;
+        states.push(state.project_id === projectId ? state : Object.assign({}, state, { project_id: projectId }));
+      }
+      return sortStates(states);
+    }
+
     return sortStates(Object.values(this.stateMap).filter((state) => state.project_id === projectId));
   });
 
@@ -222,6 +240,11 @@ export class StateStore implements IStateStore {
       statesResponse.forEach((state) => {
         set(this.stateMap, [state.id], state);
       });
+      set(
+        this.projectStateIdsMap,
+        projectId,
+        statesResponse.map((state) => state.id)
+      );
       set(this.fetchedMap, projectId, true);
     });
     return statesResponse;
@@ -250,8 +273,17 @@ export class StateStore implements IStateStore {
   fetchWorkspaceStates = async (workspaceSlug: string) => {
     const statesResponse = await this.stateService.getWorkspaceStates(workspaceSlug);
     runInAction(() => {
+      const idsByProject: Record<string, string[]> = {};
       statesResponse.forEach((state) => {
         set(this.stateMap, [state.id], state);
+        const projectId = state.project_id;
+        if (!projectId) return;
+        const list = idsByProject[projectId] ?? [];
+        if (!list.includes(state.id)) list.push(state.id);
+        idsByProject[projectId] = list;
+      });
+      Object.entries(idsByProject).forEach(([projectId, stateIds]) => {
+        set(this.projectStateIdsMap, projectId, stateIds);
       });
       set(this.fetchedMap, workspaceSlug, true);
     });
