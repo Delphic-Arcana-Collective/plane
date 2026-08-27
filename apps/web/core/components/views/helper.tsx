@@ -5,9 +5,6 @@
  */
 
 import { EIssueLayoutTypes } from "@plane/types";
-import { WorkspaceCalendarRoot } from "@/components/issues/issue-layouts/calendar/roots/workspace-root";
-import { WorkspaceGanttRoot } from "@/components/issues/issue-layouts/gantt/workspace-root";
-import { WorkspaceKanbanRoot } from "@/components/issues/issue-layouts/kanban/roots/workspace-root";
 import { WorkspaceSpreadsheetRoot } from "@/components/issues/issue-layouts/spreadsheet/roots/workspace-root";
 
 export type TWorkspaceLayoutProps = {
@@ -39,19 +36,6 @@ export function WorkspaceActiveLayout(props: TWorkspaceLayoutProps) {
     issuesLoading,
   } = props;
   switch (activeLayout) {
-    case EIssueLayoutTypes.KANBAN:
-      return (
-        <WorkspaceKanbanRoot
-          isLoading={isLoading}
-          workspaceSlug={workspaceSlug}
-          globalViewId={globalViewId}
-          issuesLoading={issuesLoading}
-        />
-      );
-    case EIssueLayoutTypes.CALENDAR:
-      return <WorkspaceCalendarRoot />;
-    case EIssueLayoutTypes.GANTT:
-      return <WorkspaceGanttRoot />;
     case EIssueLayoutTypes.SPREADSHEET:
       return (
         <WorkspaceSpreadsheetRoot

@@ -252,7 +252,7 @@ export class ProjectIssuesFilter extends IssueFilterHelperStore implements IProj
             });
           });
 
-          if (this.getShouldClearIssues(updatedDisplayFilters) && !isLinearDisplayMode()) {
+          if (this.getShouldClearIssues(updatedDisplayFilters)) {
             this.rootIssueStore.projectIssues.clear(true); // clear issues for local store when some filters like layout changes
           }
 

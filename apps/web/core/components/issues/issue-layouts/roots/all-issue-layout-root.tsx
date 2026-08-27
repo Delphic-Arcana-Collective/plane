@@ -4,14 +4,15 @@
  * See the LICENSE file for details.
  */
 
-import React, { useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import { observer } from "mobx-react";
 import { useParams, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 // plane imports
 import { ISSUE_DISPLAY_FILTERS_BY_PAGE } from "@plane/constants";
 import { EmptyStateDetailed } from "@plane/propel/empty-state";
-import { EIssueLayoutTypes, EIssuesStoreType, STATIC_VIEW_TYPES } from "@plane/types";
+import type { EIssueLayoutTypes } from "@plane/types";
+import { EIssuesStoreType, STATIC_VIEW_TYPES } from "@plane/types";
 // assets
 // components
 import { IssuePeekOverview } from "@/components/issues/peek-overview";
@@ -24,7 +25,6 @@ import { useIssues } from "@/hooks/store/use-issues";
 import { useAppRouter } from "@/hooks/use-app-router";
 import { IssuesStoreContext } from "@/hooks/use-issue-layout-store";
 import { useWorkspaceIssueProperties } from "@/hooks/use-workspace-issue-properties";
-import { isLinearAllIssuesView } from "@/helpers/linear-display.helper";
 
 type Props = {
   isDefaultView: boolean;
@@ -43,7 +43,6 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
   const searchParams = useSearchParams();
   // store hooks
   const {
-    issuesFilter,
     issuesFilter: { filters, fetchFilters, updateFilterExpression },
     issues: { clear, groupedIssueIds, fetchIssues, fetchNextIssues },
   } = useIssues(EIssuesStoreType.GLOBAL);
@@ -51,10 +50,7 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
   // Derived values
   const viewDetails = globalViewId ? getViewDetailsById(globalViewId) : undefined;
   const workItemFilters = globalViewId ? filters?.[globalViewId] : undefined;
-  const isLinearAllIssues = isLinearAllIssuesView(globalViewId);
-  const filtersToShowByLayout = isLinearAllIssues
-    ? ISSUE_DISPLAY_FILTERS_BY_PAGE.issues.filters
-    : ISSUE_DISPLAY_FILTERS_BY_PAGE.my_issues.filters;
+  const activeLayout: EIssueLayoutTypes | undefined = workItemFilters?.displayFilters?.layout;
   // Determine initial work item filters based on view type and availability
   const initialWorkItemFilters = useMemo(() => {
     if (!globalViewId) return undefined;
@@ -71,8 +67,6 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
       richFilters: viewDetails?.rich_filters ?? {},
     };
   }, [globalViewId, viewDetails, workItemFilters]);
-
-  const activeLayout: EIssueLayoutTypes | undefined = workItemFilters?.displayFilters?.layout;
 
   // Custom hooks
   useWorkspaceIssueProperties(workspaceSlug);
@@ -99,65 +93,23 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
     { revalidateIfStale: false, revalidateOnFocus: false }
   );
 
-  // Fetch issues — non-linear views only; linear all-issues is route-driven below.
+  // Fetch issues
   const { isLoading: issuesLoading } = useSWR(
-    workspaceSlug && globalViewId && !isLinearAllIssues
-      ? `WORKSPACE_GLOBAL_VIEW_ISSUES_${workspaceSlug}_${globalViewId}`
-      : null,
+    workspaceSlug && globalViewId ? `WORKSPACE_GLOBAL_VIEW_ISSUES_${workspaceSlug}_${globalViewId}` : null,
     async () => {
       if (workspaceSlug && globalViewId) {
         clear();
         toggleLoading(true);
         await fetchFilters(workspaceSlug, globalViewId);
-        const displayFilters = issuesFilter.getIssueFilters(globalViewId)?.displayFilters;
-        const layout = displayFilters?.layout;
-
-        if (layout === EIssueLayoutTypes.CALENDAR || layout === EIssueLayoutTypes.GANTT) {
-          toggleLoading(false);
-          return;
-        }
-
-        const subGroupBy = displayFilters?.sub_group_by;
-        const canGroup = layout === EIssueLayoutTypes.KANBAN;
-        const perPageCount = layout === EIssueLayoutTypes.KANBAN ? (subGroupBy ? 10 : 30) : 100;
-
         await fetchIssues(workspaceSlug, globalViewId, groupedIssueIds ? "mutation" : "init-loader", {
-          canGroup,
-          perPageCount,
+          canGroup: false,
+          perPageCount: 100,
         });
         toggleLoading(false);
       }
     },
     { revalidateIfStale: false, revalidateOnFocus: false }
   );
-
-  // Linear all-issues: fetch on route entry (sessionStorage restore lives in the store).
-  useEffect(() => {
-    if (!workspaceSlug || !globalViewId || !isLinearAllIssues) return;
-
-    let cancelled = false;
-
-    void (async () => {
-      await fetchFilters(workspaceSlug, globalViewId);
-      if (cancelled) return;
-
-      const displayFilters = issuesFilter.getIssueFilters(globalViewId)?.displayFilters;
-      const layout = displayFilters?.layout;
-
-      if (layout === EIssueLayoutTypes.CALENDAR || layout === EIssueLayoutTypes.GANTT) {
-        return;
-      }
-
-      await fetchIssues(workspaceSlug, globalViewId, "init-loader", {
-        canGroup: false,
-        perPageCount: 100,
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [workspaceSlug, globalViewId, isLinearAllIssues, fetchFilters, issuesFilter, fetchIssues]);
 
   // Empty state
   if (!isLoading && !globalViewsLoading && !issuesLoading && !viewDetails && !isDefaultView) {
@@ -188,7 +140,7 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
         enableUpdateView
         entityId={globalViewId}
         entityType={EIssuesStoreType.GLOBAL}
-        filtersToShowByLayout={filtersToShowByLayout}
+        filtersToShowByLayout={ISSUE_DISPLAY_FILTERS_BY_PAGE.my_issues.filters}
         initialWorkItemFilters={initialWorkItemFilters}
         updateFilters={updateFilterExpression.bind(updateFilterExpression, workspaceSlug, globalViewId)}
         workspaceSlug={workspaceSlug}

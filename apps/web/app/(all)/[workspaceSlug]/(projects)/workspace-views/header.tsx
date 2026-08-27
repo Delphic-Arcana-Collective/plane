@@ -18,21 +18,11 @@ import { Breadcrumbs, Header, BreadcrumbNavigationSearchDropdown } from "@plane/
 // components
 import { BreadcrumbLink } from "@/components/common/breadcrumb-link";
 import { SwitcherLabel } from "@/components/common/switcher-label";
-import {
-  DisplayFiltersSelection,
-  FiltersDropdown,
-  LayoutSelection,
-  MobileLayoutSelection,
-} from "@/components/issues/issue-layouts/filters";
+import { DisplayFiltersSelection, FiltersDropdown } from "@/components/issues/issue-layouts/filters";
 import { WorkItemFiltersToggle } from "@/components/work-item-filters/filters-toggle";
 import { DefaultWorkspaceViewQuickActions } from "@/components/workspace/views/default-view-quick-action";
 import { CreateUpdateWorkspaceViewModal } from "@/components/workspace/views/modal";
 import { WorkspaceViewQuickActions } from "@/components/workspace/views/quick-action";
-import {
-  getLinearWorkspaceLayoutFilterOptions,
-  isLinearAllIssuesView,
-  LINEAR_WORKSPACE_LAYOUTS,
-} from "@/helpers/linear-display.helper";
 // hooks
 import { useGlobalView } from "@/hooks/store/use-global-view";
 import { useIssues } from "@/hooks/store/use-issues";
@@ -56,16 +46,6 @@ export const GlobalIssuesHeader = observer(function GlobalIssuesHeader() {
 
   const activeLayout = issueFilters?.displayFilters?.layout;
   const viewDetails = globalViewId ? getViewDetailsById(globalViewId) : undefined;
-
-  const isLinearAllIssues = isLinearAllIssuesView(globalViewId);
-
-  const handleLayoutChange = useCallback(
-    (layout: EIssueLayoutTypes) => {
-      if (!workspaceSlug || !globalViewId) return;
-      updateFilters(workspaceSlug.toString(), undefined, EIssueFilterType.DISPLAY_FILTERS, { layout }, globalViewId);
-    },
-    [workspaceSlug, updateFilters, globalViewId]
-  );
 
   const handleDisplayFilters = useCallback(
     (updatedDisplayFilter: Partial<IIssueDisplayFilterOptions>) => {
@@ -115,12 +95,9 @@ export const GlobalIssuesHeader = observer(function GlobalIssuesHeader() {
     (option) => option !== undefined
   ) as ICustomSearchSelectOption[];
   const currentLayoutFilters = useMemo(() => {
-    const layout = activeLayout ?? (isLinearAllIssues ? EIssueLayoutTypes.KANBAN : EIssueLayoutTypes.SPREADSHEET);
-    if (isLinearAllIssues) {
-      return getLinearWorkspaceLayoutFilterOptions(layout);
-    }
+    const layout = activeLayout ?? EIssueLayoutTypes.SPREADSHEET;
     return ISSUE_DISPLAY_FILTERS_BY_PAGE.my_issues.layoutOptions[layout];
-  }, [activeLayout, isLinearAllIssues]);
+  }, [activeLayout]);
 
   return (
     <>
@@ -154,24 +131,6 @@ export const GlobalIssuesHeader = observer(function GlobalIssuesHeader() {
         </Header.LeftItem>
 
         <Header.RightItem className="items-center">
-          {isLinearAllIssues && (
-            <>
-              <div className="hidden @4xl:flex">
-                <LayoutSelection
-                  layouts={[...LINEAR_WORKSPACE_LAYOUTS]}
-                  onChange={handleLayoutChange}
-                  selectedLayout={activeLayout ?? EIssueLayoutTypes.KANBAN}
-                />
-              </div>
-              <div className="flex @4xl:hidden">
-                <MobileLayoutSelection
-                  layouts={[...LINEAR_WORKSPACE_LAYOUTS]}
-                  onChange={handleLayoutChange}
-                  activeLayout={activeLayout ?? EIssueLayoutTypes.KANBAN}
-                />
-              </div>
-            </>
-          )}
           {globalViewId && <WorkItemFiltersToggle entityType={EIssuesStoreType.GLOBAL} entityId={globalViewId} />}
           {!isLocked && (
             <FiltersDropdown title={t("common.display")} placement="bottom-end">
@@ -181,16 +140,12 @@ export const GlobalIssuesHeader = observer(function GlobalIssuesHeader() {
                 handleDisplayFiltersUpdate={handleDisplayFilters}
                 displayProperties={issueFilters?.displayProperties ?? {}}
                 handleDisplayPropertiesUpdate={handleDisplayProperties}
-                cycleViewDisabled
-                moduleViewDisabled
               />
             </FiltersDropdown>
           )}
-          {!isLinearAllIssues && (
-            <Button variant="primary" size="lg" onClick={() => setCreateViewModal(true)}>
-              {t("workspace_views.add_view")}
-            </Button>
-          )}
+          <Button variant="primary" size="lg" onClick={() => setCreateViewModal(true)}>
+            {t("workspace_views.add_view")}
+          </Button>
           <div className="hidden md:block">
             {viewDetails && <WorkspaceViewQuickActions workspaceSlug={workspaceSlug?.toString()} view={viewDetails} />}
             {isDefaultView && defaultViewDetails && (

@@ -6,7 +6,6 @@
 
 import { observer } from "mobx-react";
 import { useParams } from "react-router";
-// components
 import { useTranslation } from "@plane/i18n";
 import { AppHeader } from "@/components/core/app-header";
 import { ContentWrapper } from "@/components/core/content-wrapper";

@@ -11,7 +11,7 @@ import { LogoSpinner } from "@/components/common/logo-spinner";
 import { getLinearProjectIssuesPath } from "@/helpers/linear-display.helper";
 import { useProject } from "@/hooks/store/use-project";
 
-/** Linear mode shows one project at a time — redirect merged all-issues routes to the first project. */
+/** Linear mode always lands on a project — redirect workspace/all-issues routes to the first project. */
 export const LinearDefaultProjectRedirect = observer(function LinearDefaultProjectRedirect() {
   const { workspaceSlug } = useParams();
   const { joinedProjectIds, loader } = useProject();

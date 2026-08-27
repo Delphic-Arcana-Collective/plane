@@ -31,6 +31,7 @@ export function useLinearCacheRefresh(workspaceSlug: string | undefined) {
   const { fetchPartialProjects } = useProject();
   const { fetchWorkspaceStates } = useProjectState();
   const { issues: projectIssues } = useIssues(EIssuesStoreType.PROJECT);
+  const { issues: workspaceIssues } = useIssues(EIssuesStoreType.GLOBAL);
   const lastFetchedAtRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -44,6 +45,8 @@ export function useLinearCacheRefresh(workspaceSlug: string | undefined) {
 
       if (projectId) {
         await projectIssues.fetchIssuesWithExistingPagination(workspaceSlug, projectId, "mutation");
+      } else {
+        await workspaceIssues.fetchIssuesWithExistingPagination(workspaceSlug, "all-issues", "mutation");
       }
     };
 
@@ -73,5 +76,5 @@ export function useLinearCacheRefresh(workspaceSlug: string | undefined) {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [workspaceSlug, projectId, fetchPartialProjects, fetchWorkspaceStates, projectIssues]);
+  }, [workspaceSlug, projectId, fetchPartialProjects, fetchWorkspaceStates, projectIssues, workspaceIssues]);
 }

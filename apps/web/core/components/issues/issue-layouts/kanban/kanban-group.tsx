@@ -41,7 +41,6 @@ import { useWorkFlowFDragNDrop } from "@/components/workflow";
 import { useProjectState } from "@/hooks/store/use-project-state";
 import { useIntersectionObserver } from "@/hooks/use-intersection-observer";
 import { useIssuesStore } from "@/hooks/use-issue-layout-store";
-import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 // local imports
 import { GroupDragOverlay } from "../group-drag-overlay";
 import type { TRenderQuickActions } from "../list/list-view-types";
@@ -271,8 +270,7 @@ export const KanbanGroup = observer(function KanbanGroup(props: IKanbanGroup) {
     </div>
   );
 
-  const shouldLoadMore =
-    !isLinearReadOnly() && (nextPageResults === undefined ? issueIds?.length < groupIssueCount : !!nextPageResults);
+  const shouldLoadMore = nextPageResults === undefined ? issueIds?.length < groupIssueCount : !!nextPageResults;
   const canOverlayBeVisible = isWorkflowDropDisabled || orderBy !== "sort_order" || isDropDisabled;
   const shouldOverlayBeVisible = isDraggingOverColumn && canOverlayBeVisible;
   const canDragIssuesInCurrentGrouping =

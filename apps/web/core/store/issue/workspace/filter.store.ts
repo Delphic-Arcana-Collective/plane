@@ -23,11 +23,7 @@ import type {
 } from "@plane/types";
 import { EIssuesStoreType, EIssueLayoutTypes, STATIC_VIEW_TYPES } from "@plane/types";
 import { handleIssueQueryParamsByLayout } from "@plane/utils";
-import {
-  getLinearDefaultDisplayFilters,
-  isLinearAllIssuesView,
-  isLinearWorkspaceLayout,
-} from "@/helpers/linear-display.helper";
+import { getLinearDefaultDisplayFilters, isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // services
 import { WorkspaceService } from "@/services/workspace.service";
 // local imports
@@ -105,11 +101,7 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
     const userFilters = this.getIssueFilters(viewId);
     if (!userFilters) return undefined;
 
-    const layout = isLinearAllIssuesView(viewId)
-      ? (userFilters.displayFilters?.layout ?? EIssueLayoutTypes.KANBAN)
-      : EIssueLayoutTypes.SPREADSHEET;
-    const filterPage = isLinearAllIssuesView(viewId) ? "issues" : "my_issues";
-    const filteredParams = handleIssueQueryParamsByLayout(layout, filterPage);
+    const filteredParams = handleIssueQueryParamsByLayout(EIssueLayoutTypes.SPREADSHEET, "my_issues");
     if (!filteredParams) return undefined;
 
     const filteredRouteParams: Partial<Record<TIssueParams, string | boolean>> = this.computedFilteredParams(
@@ -167,19 +159,15 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
       sub_group_by: [],
     };
 
-    const isLinearAllIssues = isLinearAllIssuesView(viewId);
     const storedFilters = this.handleIssuesLocalFilters.get(EIssuesStoreType.GLOBAL, workspaceSlug, undefined, viewId);
-    const defaultDisplayFilters: IIssueDisplayFilterOptions = isLinearAllIssues
-      ? getLinearDefaultDisplayFilters()
-      : {
-          layout: EIssueLayoutTypes.SPREADSHEET,
-          order_by: "-created_at",
-        };
+    const defaultDisplayFilters =
+      isLinearDisplayMode() && viewId === "all-issues"
+        ? getLinearDefaultDisplayFilters()
+        : {
+            layout: EIssueLayoutTypes.SPREADSHEET,
+            order_by: "-created_at",
+          };
     displayFilters = this.computedDisplayFilters(storedFilters?.display_filters, defaultDisplayFilters);
-
-    if (isLinearAllIssues && !isLinearWorkspaceLayout(displayFilters.layout)) {
-      displayFilters.layout = getLinearDefaultDisplayFilters().layout;
-    }
     displayProperties = this.computedDisplayProperties(storedFilters?.display_properties);
     kanbanFilters = {
       group_by: storedFilters?.kanban_filters?.group_by || [],
@@ -198,7 +186,7 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
     }
 
     // override existing order by if ordered by manual sort_order
-    if (!isLinearAllIssues && displayFilters.order_by === "sort_order") {
+    if (displayFilters.order_by === "sort_order") {
       displayFilters.order_by = "-created_at";
     }
 
@@ -275,14 +263,7 @@ export class WorkspaceIssuesFilter extends IssueFilterHelperStore implements IWo
             });
           });
 
-          const isLinearLayoutSwitch =
-            isLinearAllIssuesView(viewId) &&
-            "layout" in updatedDisplayFilters &&
-            Object.keys(updatedDisplayFilters).length === 1;
-
-          if (!isLinearLayoutSwitch) {
-            this.rootIssueStore.workspaceIssues.fetchIssuesWithExistingPagination(workspaceSlug, viewId, "mutation");
-          }
+          this.rootIssueStore.workspaceIssues.fetchIssuesWithExistingPagination(workspaceSlug, viewId, "mutation");
 
           if (["all-issues", "assigned", "created", "subscribed"].includes(viewId))
             this.handleIssuesLocalFilters.set(EIssuesStoreType.GLOBAL, type, workspaceSlug, undefined, viewId, {

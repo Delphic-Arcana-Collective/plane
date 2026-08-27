@@ -1159,20 +1159,11 @@ export abstract class BaseIssuesStore implements IBaseIssuesStore {
   /**
    * Method called to clear out the current store
    */
-  protected beginFetch(loadType: TLoader, shouldClearPaginationOptions: boolean, preserveIssueList = false): number {
+  protected beginFetch(loadType: TLoader, shouldClearPaginationOptions: boolean): number {
     const sequence = ++this.fetchSequence;
-    this.controller.abort();
-    this.controller = new AbortController();
     runInAction(() => {
       this.setLoader(loadType);
-      if (!preserveIssueList) {
-        this.groupedIssueIds = undefined;
-        this.issuePaginationData = {};
-        this.groupedIssueCount = {};
-      }
-      if (shouldClearPaginationOptions) {
-        this.paginationOptions = undefined;
-      }
+      this.clear(!shouldClearPaginationOptions);
     });
     return sequence;
   }

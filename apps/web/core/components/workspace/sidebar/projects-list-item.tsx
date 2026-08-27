@@ -299,7 +299,6 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   const shouldHighlightProject =
     isProjectSelected && (isLinearMode || projectPreferences.navigationMode !== "ACCORDION");
   const projectLinkUrl = isLinearMode ? linearIssuesUrl : defaultTabUrl;
-  const linearHref = linearIssuesUrl;
 
   return (
     <>
@@ -351,7 +350,7 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
             )}
             <>
               {isLinearMode ? (
-                <Link href={linearHref} className="flex flex-grow truncate" onClick={handleLinearLinkClick}>
+                <Link href={linearIssuesUrl} className="flex flex-grow truncate" onClick={handleLinearLinkClick}>
                   <div className="flex w-full flex-grow items-center gap-1.5 text-left select-none">
                     <div className="grid size-4 flex-shrink-0 place-items-center">
                       <Logo logo={project.logo_props} size={16} />

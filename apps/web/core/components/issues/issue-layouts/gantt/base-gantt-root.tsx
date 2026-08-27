@@ -25,7 +25,6 @@ import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
 import { useIssuesActions } from "@/hooks/use-issues-actions";
 import { useTimeLineChart } from "@/hooks/use-timeline-chart";
 import { useBulkOperationStatus } from "@/hooks/use-bulk-operation-status";
-import { isLinearReadOnly } from "@/helpers/linear-display.helper";
 // local imports
 import { IssueLayoutHOC } from "../issue-layout-HOC";
 import { GanttQuickAddIssueButton, QuickAddIssueRoot } from "../quick-add";
@@ -87,7 +86,9 @@ export const BaseGanttRoot = observer(function BaseGanttRoot(props: IBaseGanttRo
     const payload: any = { ...data };
     if (data.sort_order) payload.sort_order = data.sort_order.newSortOrder;
 
-    if (updateIssue) await updateIssue(issue.project_id, issue.id, payload);
+    if (updateIssue) {
+      await updateIssue(issue.project_id, issue.id, payload);
+    }
   };
 
   const isAllowed = allowPermissions([EUserPermissions.ADMIN, EUserPermissions.MEMBER], EUserPermissionsLevel.PROJECT);
@@ -144,7 +145,7 @@ export const BaseGanttRoot = observer(function BaseGanttRoot(props: IBaseGanttRo
             enableSelection={isBulkOperationsEnabled && isAllowed}
             quickAdd={quickAdd}
             loadMoreBlocks={loadMoreIssues}
-            canLoadMoreBlocks={!isLinearReadOnly() && nextPageResults}
+            canLoadMoreBlocks={nextPageResults}
             updateBlockDates={updateBlockDates}
             showAllBlocks
             enableDependency

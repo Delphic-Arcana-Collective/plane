@@ -10,9 +10,8 @@ import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 // plane imports
 import { ALL_ISSUES, EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
-import type { IIssueDisplayFilterOptions } from "@plane/types";
-import { EIssueLayoutTypes, EIssuesStoreType } from "@plane/types";
-import { decodeRouteProjectId, isLinearReadOnly } from "@/helpers/linear-display.helper";
+import type { EIssuesStoreType, IIssueDisplayFilterOptions } from "@plane/types";
+import { EIssueLayoutTypes } from "@plane/types";
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
 import { useUserPermissions } from "@/hooks/store/user";
@@ -43,8 +42,7 @@ interface IBaseSpreadsheetRoot {
 export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: IBaseSpreadsheetRoot) {
   const { QuickActions, canEditPropertiesBasedOnProject, isCompletedCycle = false, viewId, isEpic = false } = props;
   // router
-  const { projectId: routeProjectIdParam } = useParams();
-  const routeProjectId = decodeRouteProjectId(routeProjectIdParam?.toString());
+  const { projectId } = useParams();
   // store hooks
   const storeType = useIssueStoreType() as SpreadsheetStoreType;
   const { allowPermissions } = useUserPermissions();
@@ -69,43 +67,31 @@ export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: 
   );
 
   useEffect(() => {
-    if (
-      storeType === EIssuesStoreType.PROJECT &&
-      isLinearReadOnly() &&
-      routeProjectId &&
-      "isProjectDataReady" in issues &&
-      issues.isProjectDataReady(routeProjectId)
-    ) {
-      return;
-    }
     fetchIssues("init-loader", { canGroup: false, perPageCount: 100 }, viewId);
-  }, [fetchIssues, storeType, viewId, routeProjectId, issues]);
-
-  const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && routeProjectId;
-
-  const issueIds =
-    isLinearProject && "isProjectDataReady" in issues && !issues.isProjectDataReady(routeProjectId)
-      ? []
-      : (issues.groupedIssueIds?.[ALL_ISSUES] ?? []);
-  const nextPageResults = issues.getPaginationData(ALL_ISSUES, undefined)?.nextPageResults;
+  }, [fetchIssues, storeType, viewId]);
 
   const canEditProperties = useCallback(
-    (projectId: string | undefined) => {
+    (targetProjectId: string | undefined) => {
       const isEditingAllowedBasedOnProject =
-        canEditPropertiesBasedOnProject && projectId ? canEditPropertiesBasedOnProject(projectId) : isEditingAllowed;
+        canEditPropertiesBasedOnProject && targetProjectId
+          ? canEditPropertiesBasedOnProject(targetProjectId)
+          : isEditingAllowed;
 
       return enableInlineEditing && isEditingAllowedBasedOnProject;
     },
     [canEditPropertiesBasedOnProject, enableInlineEditing, isEditingAllowed]
   );
 
+  const issueIds = issues.groupedIssueIds?.[ALL_ISSUES] ?? [];
+  const nextPageResults = issues.getPaginationData(ALL_ISSUES, undefined)?.nextPageResults;
+
   const handleDisplayFiltersUpdate = useCallback(
     (updatedDisplayFilter: Partial<IIssueDisplayFilterOptions>) => {
-      updateFilters(routeProjectId ?? "", EIssueFilterType.DISPLAY_FILTERS, {
+      updateFilters(projectId?.toString() ?? "", EIssueFilterType.DISPLAY_FILTERS, {
         ...updatedDisplayFilter,
       });
     },
-    [routeProjectId, updateFilters]
+    [projectId, updateFilters]
   );
 
   const renderQuickActions: TRenderQuickActions = useCallback(
@@ -151,7 +137,7 @@ export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: 
         quickAddCallback={quickAddIssue}
         enableQuickCreateIssue={enableQuickAdd}
         disableIssueCreation={!enableIssueCreation || !isEditingAllowed || isCompletedCycle}
-        canLoadMoreIssues={!isLinearReadOnly() && !!nextPageResults}
+        canLoadMoreIssues={!!nextPageResults}
         loadMoreIssues={fetchNextIssues}
         isEpic={isEpic}
       />
