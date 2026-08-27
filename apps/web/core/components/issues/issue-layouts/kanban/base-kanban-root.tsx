@@ -5,7 +5,7 @@
  */
 
 import type { FC } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { combine } from "@atlaskit/pragmatic-drag-and-drop/combine";
 import { dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { autoScrollForElements } from "@atlaskit/pragmatic-drag-and-drop-auto-scroll/element";
@@ -14,7 +14,7 @@ import { useParams } from "next/navigation";
 import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import type { EIssuesStoreType } from "@plane/types";
 import { EIssueServiceType, EIssueLayoutTypes } from "@plane/types";
-import { decodeRouteProjectId } from "@/helpers/linear-display.helper";
+import { decodeRouteProjectId, isLinearReadOnly, resolveLinearGroupedIssueIds } from "@/helpers/linear-display.helper";
 //hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
@@ -101,11 +101,34 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
   const group_by = displayFilters?.group_by;
 
   const orderBy = displayFilters?.order_by;
+  const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly();
 
   useEffect(() => {
     if (storeType === EIssuesStoreType.PROJECT && !routeProjectId) return;
-    fetchIssues("init-loader", { canGroup: true, perPageCount: sub_group_by ? 10 : 30 }, viewId);
-  }, [fetchIssues, storeType, group_by, sub_group_by, viewId, routeProjectId]);
+    if (
+      isLinearProject &&
+      routeProjectId &&
+      "isProjectViewReady" in issues &&
+      issues.isProjectViewReady(routeProjectId) &&
+      issues.loadedProjectId === routeProjectId
+    ) {
+      return;
+    }
+    fetchIssues(
+      "init-loader",
+      { canGroup: !isLinearProject, perPageCount: isLinearProject ? 100 : sub_group_by ? 10 : 30 },
+      viewId
+    );
+  }, [fetchIssues, storeType, group_by, sub_group_by, viewId, routeProjectId, isLinearProject, issues]);
+
+  const groupedIssueIds = useMemo(() => {
+    const raw = issues?.groupedIssueIds;
+    if (!raw) return undefined;
+    if (isLinearProject && group_by) {
+      return resolveLinearGroupedIssueIds(raw, issueMap, group_by);
+    }
+    return raw;
+  }, [isLinearProject, group_by, issues?.groupedIssueIds, issueMap]);
 
   const fetchMoreIssues = useCallback(
     (groupId?: string, subgroupId?: string) => {
@@ -115,8 +138,6 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
     },
     [fetchNextIssues, issues]
   );
-
-  const groupedIssueIds = issues?.groupedIssueIds;
 
   const userDisplayFilters = displayFilters || null;
 
@@ -238,11 +259,7 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
         });
       }
     },
-    [
-	workspaceSlug,
-	issuesFilter,
-	updateFilters
-]
+    [workspaceSlug, issuesFilter, updateFilters]
   );
 
   const collapsedGroups = issuesFilter?.issueFilters?.kanbanFilters || { group_by: [], sub_group_by: [] };

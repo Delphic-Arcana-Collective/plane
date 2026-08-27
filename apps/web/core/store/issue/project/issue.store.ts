@@ -6,6 +6,7 @@
 
 import { action, computed, makeObservable, observable, runInAction } from "mobx";
 // types
+import { ALL_ISSUES } from "@plane/constants";
 import type {
   TIssue,
   TLoader,
@@ -13,7 +14,9 @@ import type {
   IssuePaginationOptions,
   TIssuesResponse,
   TBulkOperationsPayload,
+  GroupByColumnTypes,
 } from "@plane/types";
+import { EIssueLayoutTypes } from "@plane/types";
 // helpers
 // base class
 import type { IBaseIssuesStore } from "../helpers/base-issues.store";
@@ -21,7 +24,12 @@ import { BaseIssuesStore } from "../helpers/base-issues.store";
 // services
 import type { IIssueRootStore } from "../root.store";
 import type { IProjectIssuesFilter } from "./filter.store";
-import { isLinearReadOnly, LINEAR_READ_ONLY_VIEW_FLAGS } from "@/helpers/linear-display.helper";
+import {
+  groupLinearIssuesFromFlatList,
+  hasLinearGroupedIssueData,
+  isLinearReadOnly,
+  LINEAR_READ_ONLY_VIEW_FLAGS,
+} from "@/helpers/linear-display.helper";
 
 export interface IProjectIssues extends IBaseIssuesStore {
   viewFlags: ViewFlags;
@@ -65,8 +73,44 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
   isProjectViewReady = (projectId: string): boolean => {
     if (!isLinearReadOnly()) return true;
-    return this.loadedProjectId === projectId && this.groupedIssueIds !== undefined;
+    if (this.loadedProjectId !== projectId || !this.groupedIssueIds) return false;
+
+    const filters = this.issueFilterStore.getIssueFilters(projectId);
+    const layout = filters?.displayFilters?.layout ?? EIssueLayoutTypes.LIST;
+    const groupBy = (filters?.displayFilters?.group_by ?? null) as GroupByColumnTypes | null;
+
+    return hasLinearGroupedIssueData(this.groupedIssueIds, layout, groupBy);
   };
+
+  private normalizeLinearGroupedIssues(projectId: string) {
+    const groupedIssueIds = this.groupedIssueIds;
+    if (!groupedIssueIds) return false;
+
+    const flatIds = groupedIssueIds[ALL_ISSUES];
+    const getIssueById = this.rootIssueStore.issues.getIssueById;
+
+    if (Array.isArray(flatIds) && flatIds.length > 0) {
+      if (!flatIds.every((issueId) => getIssueById(issueId)?.project_id === projectId)) {
+        return false;
+      }
+    }
+
+    const filters = this.issueFilterStore.getIssueFilters(projectId);
+    const groupBy = (filters?.displayFilters?.group_by ?? null) as GroupByColumnTypes | null;
+    if (!groupBy || !Array.isArray(flatIds) || flatIds.length === 0) {
+      return true;
+    }
+
+    const issueMap = Object.fromEntries(
+      flatIds.flatMap((issueId) => {
+        const issue = getIssueById(issueId);
+        return issue ? [[issueId, issue] as const] : [];
+      })
+    );
+
+    this.groupedIssueIds = groupLinearIssuesFromFlatList(groupedIssueIds, issueMap, groupBy);
+    return true;
+  }
 
   get viewFlags(): ViewFlags {
     if (isLinearReadOnly()) {
@@ -177,8 +221,14 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       if (this.isStaleFetch(sequence)) return;
 
       this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
+
       runInAction(() => {
-        this.loadedProjectId = projectId;
+        if (this.normalizeLinearGroupedIssues(projectId)) {
+          this.loadedProjectId = projectId;
+        } else {
+          this.loadedProjectId = null;
+          this.setLoader(loadType);
+        }
       });
       return response;
     } catch (error) {

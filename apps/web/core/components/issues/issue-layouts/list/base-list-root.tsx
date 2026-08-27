@@ -5,7 +5,7 @@
  */
 
 import type { FC } from "react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 // plane constants
@@ -18,7 +18,7 @@ import {
   type TGroupedIssues,
   type TIssueKanbanFilters,
 } from "@plane/types";
-import { decodeRouteProjectId } from "@/helpers/linear-display.helper";
+import { decodeRouteProjectId, isLinearReadOnly, resolveLinearGroupedIssueIds } from "@/helpers/linear-display.helper";
 // constants
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
@@ -100,12 +100,44 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
   const collapsedGroups =
     issueFiltersForView?.kanbanFilters || ({ group_by: [], sub_group_by: [] } as TIssueKanbanFilters);
 
+  const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly();
+
   useEffect(() => {
     if (!displayFilters || !workspaceSlugStr || !routeProjectId) return;
-    fetchIssues("init-loader", { canGroup: true, perPageCount: group_by ? 50 : 100 }, viewId);
-  }, [fetchIssues, storeType, group_by, viewId, layout, displayFilters, workspaceSlugStr, routeProjectId]);
+    if (
+      isLinearProject &&
+      "isProjectViewReady" in issues &&
+      issues.isProjectViewReady(routeProjectId) &&
+      issues.loadedProjectId === routeProjectId
+    ) {
+      return;
+    }
+    fetchIssues(
+      "init-loader",
+      { canGroup: !isLinearProject, perPageCount: isLinearProject ? 100 : group_by ? 50 : 100 },
+      viewId
+    );
+  }, [
+    fetchIssues,
+    storeType,
+    group_by,
+    viewId,
+    layout,
+    displayFilters,
+    workspaceSlugStr,
+    routeProjectId,
+    isLinearProject,
+    issues,
+  ]);
 
-  const groupedIssueIds = issues?.groupedIssueIds as TGroupedIssues | undefined;
+  const groupedIssueIds = useMemo(() => {
+    const raw = issues?.groupedIssueIds as TGroupedIssues | undefined;
+    if (!raw) return undefined;
+    if (isLinearProject && group_by) {
+      return resolveLinearGroupedIssueIds(raw, issueMap, group_by);
+    }
+    return raw;
+  }, [isLinearProject, group_by, issues?.groupedIssueIds, issueMap]);
   // auth
   const isEditingAllowed = allowPermissions(
     [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
