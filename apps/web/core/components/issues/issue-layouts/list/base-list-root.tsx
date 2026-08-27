@@ -5,7 +5,7 @@
  */
 
 import type { FC } from "react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 // plane constants
@@ -18,7 +18,7 @@ import {
   type TGroupedIssues,
   type TIssueKanbanFilters,
 } from "@plane/types";
-import { decodeRouteProjectId, resolveLinearGroupedIssueIds, isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { decodeRouteProjectId, groupLinearIssuesFromFlatList, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // constants
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
@@ -30,6 +30,7 @@ import { useIssuesActions } from "@/hooks/use-issues-actions";
 // components
 import { IssueLayoutHOC } from "../issue-layout-HOC";
 import { List } from "./default";
+import { ListLayoutLoader } from "@/components/ui/loader/layouts/list-layout-loader";
 // types
 import type { IQuickActionProps, TRenderQuickActions } from "./list-view-types";
 
@@ -103,12 +104,7 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
 
   useEffect(() => {
     if (!displayFilters || !workspaceSlugStr || !routeProjectId) return;
-    if (
-      isLinearProject &&
-      routeProjectId &&
-      "isProjectDataReady" in issues &&
-      issues.isProjectDataReady(routeProjectId)
-    ) {
+    if (isLinearProject && "isProjectDataReady" in issues && issues.isProjectDataReady(routeProjectId)) {
       return;
     }
     fetchIssues(
@@ -132,28 +128,19 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
     issues,
   ]);
 
-  const isLinearProjectReady =
-    isLinearProject && routeProjectId && "isProjectDataReady" in issues && issues.isProjectDataReady(routeProjectId);
+  const isLinearProjectLoading =
+    isLinearProject &&
+    routeProjectId &&
+    (!("isProjectDataReady" in issues) || !issues.isProjectDataReady(routeProjectId));
 
-  const listGroupedIssueIds = (() => {
-    if (
-      isLinearProject &&
-      routeProjectId &&
-      "isProjectDataReady" in issues &&
-      !issues.isProjectDataReady(routeProjectId)
-    ) {
-      return undefined;
-    }
+  const listGroupedIssueIds = useMemo(() => {
     const raw = issues?.groupedIssueIds as TGroupedIssues | undefined;
     if (!raw) return undefined;
-    if (isLinearProjectReady) {
-      return raw;
-    }
     if (isLinearProject && group_by) {
-      return resolveLinearGroupedIssueIds(raw, issueMap, group_by);
+      return groupLinearIssuesFromFlatList(raw, issueMap, group_by);
     }
     return raw;
-  })();
+  }, [isLinearProject, group_by, issues?.groupedIssueIds, issueMap]);
 
   const groupedIssueIds = listGroupedIssueIds;
 
@@ -219,6 +206,10 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
     },
     [workspaceSlugStr, issueFiltersForView, routeProjectId, updateFilters]
   );
+
+  if (isLinearProjectLoading) {
+    return <ListLayoutLoader />;
+  }
 
   return (
     <IssueLayoutHOC layout={EIssueLayoutTypes.LIST}>

@@ -7,7 +7,6 @@
 import { action, computed, makeObservable, observable, runInAction } from "mobx";
 import { cloneDeep } from "lodash-es";
 import { ALL_ISSUES } from "@plane/constants";
-// types
 import type {
   TIssue,
   TLoader,
@@ -18,40 +17,29 @@ import type {
   TGroupedIssues,
   TSubGroupedIssues,
   TGroupedIssueCount,
-  TIssuePaginationData,
   GroupByColumnTypes,
 } from "@plane/types";
 import { EIssueLayoutTypes } from "@plane/types";
-// base class
 import type { IBaseIssuesStore } from "../helpers/base-issues.store";
 import { BaseIssuesStore } from "../helpers/base-issues.store";
-// services
 import type { IIssueRootStore } from "../root.store";
 import type { IProjectIssuesFilter } from "./filter.store";
 import {
   isLinearReadOnly,
   LINEAR_READ_ONLY_VIEW_FLAGS,
-  hasLinearGroupedIssueData,
+  getLinearDefaultDisplayFilters,
   groupLinearIssuesFromFlatList,
 } from "@/helpers/linear-display.helper";
-
-/** Immutable backend payload for a project — survives navigation until page refresh or explicit refetch. */
-type TLinearProjectSnapshot = {
-  groupedIssueIds: TGroupedIssues;
-  groupedIssueCount: TGroupedIssueCount;
-  issuePaginationData: TIssuePaginationData;
-  paginationOptions: IssuePaginationOptions | undefined;
-  issues: TIssue[];
-};
-
-type TLinearInflightFetch = {
-  projectId: string;
-  promise: Promise<TIssuesResponse | undefined>;
-};
+import {
+  clearLinearProjectCache,
+  deleteLinearProjectSnapshot,
+  openLinearProjectFromCache,
+  persistLinearProjectSnapshot,
+  type TLinearProjectSnapshot,
+} from "@/helpers/linear-project-snapshot.storage";
 
 export interface IProjectIssues extends IBaseIssuesStore {
   viewFlags: ViewFlags;
-  // action
   fetchIssues: (
     workspaceSlug: string,
     projectId: string,
@@ -69,7 +57,6 @@ export interface IProjectIssues extends IBaseIssuesStore {
     groupId?: string,
     subGroupId?: string
   ) => Promise<TIssuesResponse | undefined>;
-
   createIssue: (workspaceSlug: string, projectId: string, data: Partial<TIssue>) => Promise<TIssue>;
   updateIssue: (workspaceSlug: string, projectId: string, issueId: string, data: Partial<TIssue>) => Promise<void>;
   archiveIssue: (workspaceSlug: string, projectId: string, issueId: string) => Promise<void>;
@@ -78,7 +65,6 @@ export interface IProjectIssues extends IBaseIssuesStore {
   archiveBulkIssues: (workspaceSlug: string, projectId: string, issueIds: string[]) => Promise<void>;
   bulkUpdateProperties: (workspaceSlug: string, projectId: string, data: TBulkOperationsPayload) => Promise<void>;
   isProjectDataReady: (projectId: string) => boolean;
-  snapshotBeforeLinearNavigation: (projectId: string) => void;
 }
 
 export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
@@ -86,23 +72,12 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
   issueFilterStore: IProjectIssuesFilter;
 
-  /** Route project the UI is showing. */
-  activeProjectId: string | null = null;
-  /** Which project's snapshot is currently mounted into groupedIssueIds. */
-  mountedSnapshotProjectId: string | null = null;
-
-  /** Session-scoped backend snapshots — keyed by projectId, untouched by navigation. */
-  private linearProjectSnapshots = new Map<string, TLinearProjectSnapshot>();
-  private linearInflightFetch: TLinearInflightFetch | null = null;
+  /** Mirrors sessionStorage active project — updated only after a locked read/write. */
+  linearActiveProjectId: string | null = null;
 
   isProjectDataReady = (projectId: string): boolean => {
     if (!isLinearReadOnly()) return false;
-    if (this.activeProjectId !== projectId || this.mountedSnapshotProjectId !== projectId) {
-      return false;
-    }
-
-    const snapshot = this.linearProjectSnapshots.get(projectId);
-    if (!snapshot || !this.isValidSnapshotRecord(snapshot, projectId)) return false;
+    if (this.linearActiveProjectId !== projectId) return false;
 
     const groupedIssueIds = this.groupedIssueIds;
     if (!groupedIssueIds) return false;
@@ -110,37 +85,133 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     const flatIds = groupedIssueIds[ALL_ISSUES];
     if (!Array.isArray(flatIds) || flatIds.length === 0) return false;
 
-    if (!flatIds.every((issueId) => this.rootIssueStore.issues.getIssueById(issueId))) {
+    const getIssueById = this.rootIssueStore.issues.getIssueById;
+    if (!flatIds.every((issueId) => getIssueById(issueId)?.project_id === projectId)) {
       return false;
     }
 
-    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
-    return hasLinearGroupedIssueData(
-      groupedIssueIds as TGroupedIssues,
-      displayFilters?.layout,
-      displayFilters?.group_by as GroupByColumnTypes | null
-    );
+    return Object.keys(groupedIssueIds).some((key) => {
+      if (key === ALL_ISSUES) return false;
+      const bucket = groupedIssueIds[key];
+      return Array.isArray(bucket) && bucket.length > 0;
+    });
   };
 
-  /** Validate snapshot payload itself — do not depend on issueMap hydration. */
-  private isValidSnapshotRecord(snapshot: TLinearProjectSnapshot, projectId: string): boolean {
-    const flatIds = snapshot.groupedIssueIds[ALL_ISSUES];
+  private clearLinearDisplay() {
+    this.groupedIssueIds = undefined;
+    this.groupedIssueCount = {};
+    this.issuePaginationData = {};
+  }
+
+  private buildLinearDisplayCounts(groupedIssueIds: TGroupedIssues): TGroupedIssueCount {
+    const counts: TGroupedIssueCount = {};
+    const flatIds = groupedIssueIds[ALL_ISSUES];
+    if (Array.isArray(flatIds)) {
+      counts[ALL_ISSUES] = flatIds.length;
+    }
+    for (const [key, bucket] of Object.entries(groupedIssueIds)) {
+      if (key === ALL_ISSUES || !Array.isArray(bucket)) continue;
+      counts[key] = bucket.length;
+    }
+    return counts;
+  }
+
+  private prepareSnapshotForDisplay(snapshot: TLinearProjectSnapshot): TLinearProjectSnapshot {
+    const groupedIssueIds = cloneDeep(snapshot.groupedIssueIds);
+    const linearDefaults = getLinearDefaultDisplayFilters();
+    const groupBy = linearDefaults.group_by as GroupByColumnTypes;
+    const layout = linearDefaults.layout;
+    const issueMap = Object.fromEntries(snapshot.issues.map((issue) => [issue.id, issue]));
+
+    let preparedGrouped = groupedIssueIds;
+    if (
+      groupBy &&
+      (layout === EIssueLayoutTypes.KANBAN || layout === EIssueLayoutTypes.LIST) &&
+      Array.isArray(groupedIssueIds[ALL_ISSUES])
+    ) {
+      preparedGrouped = groupLinearIssuesFromFlatList(groupedIssueIds, issueMap, groupBy);
+    }
+
+    return {
+      ...snapshot,
+      groupedIssueIds: preparedGrouped,
+      groupedIssueCount: this.buildLinearDisplayCounts(preparedGrouped),
+      issuePaginationData: {},
+    };
+  }
+
+  private isValidProjectSnapshot(snapshot: TLinearProjectSnapshot, projectId: string): boolean {
+    const prepared = this.prepareSnapshotForDisplay(snapshot);
+    const flatIds = prepared.groupedIssueIds[ALL_ISSUES];
     if (!Array.isArray(flatIds) || flatIds.length === 0) return false;
 
-    const count = snapshot.groupedIssueCount[ALL_ISSUES];
-    if (typeof count === "number" && flatIds.length !== count) return false;
-
-    const issuesById = new Map(snapshot.issues.map((issue) => [issue.id, issue]));
+    const issuesById = new Map(prepared.issues.map((issue) => [issue.id, issue]));
     if (!flatIds.every((issueId) => issuesById.get(issueId)?.project_id === projectId)) {
       return false;
     }
 
-    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
-    return hasLinearGroupedIssueData(
-      snapshot.groupedIssueIds,
-      displayFilters?.layout,
-      displayFilters?.group_by as GroupByColumnTypes | null
-    );
+    return Object.keys(prepared.groupedIssueIds).some((key) => {
+      if (key === ALL_ISSUES) return false;
+      const bucket = prepared.groupedIssueIds[key];
+      return Array.isArray(bucket) && bucket.length > 0;
+    });
+  }
+
+  private applySnapshotToStore(projectId: string, snapshot: TLinearProjectSnapshot) {
+    const prepared = this.prepareSnapshotForDisplay(snapshot);
+    this.rootIssueStore.issues.addIssue(prepared.issues);
+    this.groupedIssueIds = prepared.groupedIssueIds;
+    this.groupedIssueCount = prepared.groupedIssueCount;
+    this.issuePaginationData = {};
+    this.paginationOptions = prepared.paginationOptions ? { ...prepared.paginationOptions } : undefined;
+    this.linearActiveProjectId = projectId;
+    this.setLoader(undefined);
+  }
+
+  private showLinearLoader(projectId: string, loadType: TLoader = "init-loader") {
+    if (this.linearActiveProjectId !== projectId) return;
+    this.clearLinearDisplay();
+    this.setLoader(loadType);
+  }
+
+  private async linearOpenProject(projectId: string): Promise<boolean> {
+    const snapshot = await openLinearProjectFromCache(projectId);
+
+    if (snapshot && this.isValidProjectSnapshot(snapshot, projectId)) {
+      runInAction(() => {
+        this.applySnapshotToStore(projectId, snapshot);
+      });
+      return true;
+    }
+
+    if (snapshot) {
+      await deleteLinearProjectSnapshot(projectId);
+    }
+
+    runInAction(() => {
+      this.linearActiveProjectId = projectId;
+      this.showLinearLoader(projectId);
+    });
+    return false;
+  }
+
+  private async linearCommitSnapshot(projectId: string, snapshot: TLinearProjectSnapshot) {
+    if (this.linearActiveProjectId !== projectId) return;
+
+    if (!this.isValidProjectSnapshot(snapshot, projectId)) {
+      runInAction(() => {
+        this.showLinearLoader(projectId);
+      });
+      return;
+    }
+
+    const prepared = this.prepareSnapshotForDisplay(snapshot);
+    const stillActive = await persistLinearProjectSnapshot(projectId, prepared);
+    if (!stillActive || this.linearActiveProjectId !== projectId) return;
+
+    runInAction(() => {
+      this.applySnapshotToStore(projectId, prepared);
+    });
   }
 
   private normalizeLinearProjectGroupedIssueIds(groupedIssueIds: TGroupedIssues | TSubGroupedIssues): TGroupedIssues {
@@ -161,141 +232,23 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     };
   }
 
-  private isValidSnapshotPayload(
-    projectId: string,
-    groupedIssueIds: TGroupedIssues,
-    groupedIssueCount: TGroupedIssueCount,
-    issueList: TIssue[]
-  ): boolean {
-    const flatIds = groupedIssueIds[ALL_ISSUES];
-    if (!Array.isArray(flatIds) || flatIds.length === 0) return false;
-
-    const count = groupedIssueCount[ALL_ISSUES];
-    if (typeof count === "number" && flatIds.length !== count) return false;
-
-    if (!issueList.every((issue) => issue.project_id === projectId)) return false;
-
-    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
-    return hasLinearGroupedIssueData(
-      groupedIssueIds,
-      displayFilters?.layout,
-      displayFilters?.group_by as GroupByColumnTypes | null
-    );
-  }
-
   private createSnapshotFromFetch(
-    projectId: string,
     response: TIssuesResponse,
     options: IssuePaginationOptions,
     groupedIssueIds: TGroupedIssues,
     groupedIssueCount: TGroupedIssueCount,
     issueList: TIssue[]
   ): TLinearProjectSnapshot {
-    runInAction(() => {
-      this.groupedIssueIds = groupedIssueIds;
-      this.groupedIssueCount = groupedIssueCount;
-    });
     this.storePreviousPaginationValues(response, options);
 
-    return this.finalizeLinearSnapshot({
+    return {
       groupedIssueIds: cloneDeep(groupedIssueIds),
       groupedIssueCount: cloneDeep(groupedIssueCount),
       issuePaginationData: cloneDeep(this.issuePaginationData),
       paginationOptions: this.paginationOptions ? { ...this.paginationOptions } : undefined,
       issues: cloneDeep(issueList),
-    });
-  }
-
-  private remountActiveSnapshot() {
-    const projectId = this.activeProjectId;
-    if (!projectId) return;
-
-    const snapshot = this.linearProjectSnapshots.get(projectId);
-    if (snapshot) {
-      this.mountSnapshot(projectId, snapshot);
-    }
-  }
-
-  private saveSnapshot(projectId: string, snapshot: TLinearProjectSnapshot) {
-    this.linearProjectSnapshots.set(projectId, snapshot);
-  }
-
-  private buildLinearDisplayCounts(groupedIssueIds: TGroupedIssues): TGroupedIssueCount {
-    const counts: TGroupedIssueCount = {};
-    const flatIds = groupedIssueIds[ALL_ISSUES];
-    if (Array.isArray(flatIds)) {
-      counts[ALL_ISSUES] = flatIds.length;
-    }
-    for (const [key, bucket] of Object.entries(groupedIssueIds)) {
-      if (key === ALL_ISSUES || !Array.isArray(bucket)) continue;
-      counts[key] = bucket.length;
-    }
-    return counts;
-  }
-
-  private finalizeLinearSnapshot(snapshot: TLinearProjectSnapshot): TLinearProjectSnapshot {
-    const groupedIssueIds = cloneDeep(snapshot.groupedIssueIds);
-    return {
-      ...snapshot,
-      groupedIssueIds,
-      groupedIssueCount: this.buildLinearDisplayCounts(groupedIssueIds),
-      issuePaginationData: {},
     };
   }
-
-  private mountSnapshot(projectId: string, snapshot: TLinearProjectSnapshot) {
-    const finalized = this.finalizeLinearSnapshot(snapshot);
-    const displayFilters = this.issueFilterStore?.getIssueFilters(projectId)?.displayFilters;
-    const groupBy = (displayFilters?.group_by ?? "state") as GroupByColumnTypes;
-    const layout = displayFilters?.layout;
-    const issueMapFromSnapshot = Object.fromEntries(finalized.issues.map((issue) => [issue.id, issue]));
-
-    let groupedIssueIds = cloneDeep(finalized.groupedIssueIds);
-    if (
-      groupBy &&
-      (layout === EIssueLayoutTypes.KANBAN || layout === EIssueLayoutTypes.LIST) &&
-      Array.isArray(groupedIssueIds[ALL_ISSUES])
-    ) {
-      groupedIssueIds = groupLinearIssuesFromFlatList(groupedIssueIds, issueMapFromSnapshot, groupBy);
-    }
-
-    runInAction(() => {
-      this.rootIssueStore.issues.addIssue(finalized.issues);
-      this.groupedIssueIds = groupedIssueIds;
-      this.groupedIssueCount = this.buildLinearDisplayCounts(groupedIssueIds);
-      this.issuePaginationData = {};
-      this.paginationOptions = finalized.paginationOptions ? { ...finalized.paginationOptions } : undefined;
-      this.mountedSnapshotProjectId = projectId;
-      this.setLoader(undefined);
-    });
-  }
-
-  private activateProject = (projectId: string) => {
-    this.activeProjectId = projectId;
-
-    const snapshot = this.linearProjectSnapshots.get(projectId);
-    if (snapshot && this.isValidSnapshotRecord(snapshot, projectId)) {
-      this.mountSnapshot(projectId, snapshot);
-      return;
-    }
-
-    runInAction(() => {
-      this.mountedSnapshotProjectId = null;
-      this.groupedIssueIds = undefined;
-      this.groupedIssueCount = {};
-      this.issuePaginationData = {};
-      this.setLoader("init-loader");
-    });
-  };
-
-  /** Leaving project view — only clears the active pointer; snapshots stay in memory. */
-  snapshotBeforeLinearNavigation = (_projectId: string) => {
-    if (!isLinearReadOnly()) return;
-    runInAction(() => {
-      this.activeProjectId = null;
-      this.mountedSnapshotProjectId = null;
-    });
-  };
 
   get viewFlags(): ViewFlags {
     if (isLinearReadOnly()) {
@@ -313,12 +266,10 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     super(_rootStore, issueFilterStore);
     makeObservable(this, {
       viewFlags: computed,
-      activeProjectId: observable,
-      mountedSnapshotProjectId: observable,
+      linearActiveProjectId: observable,
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,
-      snapshotBeforeLinearNavigation: action,
       quickAddIssue: action,
     });
     this.issueFilterStore = issueFilterStore;
@@ -345,40 +296,13 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     }
 
     if (!isExistingPaginationOptions) {
-      this.activateProject(projectId);
-    }
-
-    if (this.linearProjectSnapshots.has(projectId)) {
-      const snapshot = this.linearProjectSnapshots.get(projectId)!;
-      if (this.activeProjectId === projectId && this.isValidSnapshotRecord(snapshot, projectId)) {
-        this.mountSnapshot(projectId, snapshot);
+      const loaded = await this.linearOpenProject(projectId);
+      if (loaded) {
+        return;
       }
-      return;
     }
 
-    const inflight = this.linearInflightFetch;
-    if (inflight?.projectId === projectId && !isExistingPaginationOptions) {
-      return inflight.promise;
-    }
-
-    const fetchPromise = this.runLinearFetchIssues(
-      workspaceSlug,
-      projectId,
-      loadType,
-      options,
-      isExistingPaginationOptions
-    );
-
-    if (!isExistingPaginationOptions) {
-      this.linearInflightFetch = { projectId, promise: fetchPromise };
-      void fetchPromise.finally(() => {
-        if (this.linearInflightFetch?.promise === fetchPromise) {
-          this.linearInflightFetch = null;
-        }
-      });
-    }
-
-    return fetchPromise;
+    return this.runLinearFetchIssues(workspaceSlug, projectId, loadType, options);
   };
 
   private runLegacyFetchIssues = async (
@@ -399,9 +323,6 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       if (this.isStaleFetch(sequence)) return;
 
       this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
-      runInAction(() => {
-        this.mountedSnapshotProjectId = projectId;
-      });
       return response;
     } catch (error) {
       if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
@@ -414,16 +335,14 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     workspaceSlug: string,
     projectId: string,
     loadType: TLoader,
-    options: IssuePaginationOptions,
-    _isExistingPaginationOptions: boolean
+    options: IssuePaginationOptions
   ): Promise<TIssuesResponse | undefined> => {
-    const shouldShowLoader = !this.linearProjectSnapshots.has(projectId) && this.activeProjectId === projectId;
-
-    if (shouldShowLoader) {
-      runInAction(() => {
-        this.setLoader(loadType);
-      });
-    }
+    runInAction(() => {
+      this.linearActiveProjectId = projectId;
+      if (!this.isProjectDataReady(projectId)) {
+        this.showLinearLoader(projectId, loadType);
+      }
+    });
 
     try {
       const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
@@ -431,56 +350,36 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
         signal: undefined,
       });
 
+      if (this.linearActiveProjectId !== projectId) return;
+
       const { issueList, groupedIssues, groupedIssueCount } = this.processIssueResponse(response);
       const groupedIssueIds = this.normalizeLinearProjectGroupedIssueIds(groupedIssues);
 
-      if (!this.isValidSnapshotPayload(projectId, groupedIssueIds, groupedIssueCount, issueList)) {
+      const flatIds = groupedIssueIds[ALL_ISSUES];
+      if (
+        !Array.isArray(flatIds) ||
+        flatIds.length === 0 ||
+        !issueList.every((issue) => issue.project_id === projectId)
+      ) {
         runInAction(() => {
-          if (this.activeProjectId === projectId) {
-            this.mountedSnapshotProjectId = null;
-            this.setLoader("init-loader");
-          }
+          this.showLinearLoader(projectId);
         });
         return;
       }
 
-      this.rootIssueStore.issues.addIssue(issueList);
-      this.rootIssueStore.issueDetail.relation.extractRelationsFromIssues(issueList);
-
-      const snapshot = this.createSnapshotFromFetch(
-        projectId,
-        response,
-        options,
-        groupedIssueIds,
-        groupedIssueCount,
-        issueList
-      );
-      this.saveSnapshot(projectId, snapshot);
-
-      if (this.activeProjectId === projectId) {
-        this.mountSnapshot(projectId, snapshot);
-      } else {
-        this.remountActiveSnapshot();
-      }
+      const snapshot = this.createSnapshotFromFetch(response, options, groupedIssueIds, groupedIssueCount, issueList);
+      await this.linearCommitSnapshot(projectId, snapshot);
 
       void this.fetchParentStats(workspaceSlug, projectId);
       return response;
     } catch (error) {
-      if (this.isAbortError(error)) return;
-
-      if (this.activeProjectId === projectId) {
-        const existing = this.linearProjectSnapshots.get(projectId);
-        if (existing) {
-          this.mountSnapshot(projectId, existing);
-          return;
-        }
-
-        runInAction(() => {
-          this.mountedSnapshotProjectId = null;
-          this.setLoader("init-loader");
-        });
+      if (this.isAbortError(error)) {
+        return;
       }
 
+      runInAction(() => {
+        this.showLinearLoader(projectId);
+      });
       throw error;
     }
   };
@@ -507,23 +406,17 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       );
       const response = await this.issueService.getIssues(workspaceSlug, projectId, params);
 
-      if (isLinearReadOnly()) {
-        if (this.activeProjectId !== projectId) return;
-      } else if (this.isStaleFetch(sequence)) {
+      if (this.isStaleFetch(sequence)) {
         return;
       }
 
       this.onfetchNexIssues(response, groupId, subGroupId);
       return response;
     } catch (error) {
-      if (isLinearReadOnly()) {
-        if (this.activeProjectId !== projectId || this.isAbortError(error)) return;
-        this.setLoader(undefined, groupId, subGroupId);
-      } else if (this.isStaleFetch(sequence) || this.isAbortError(error)) {
+      if (this.isStaleFetch(sequence) || this.isAbortError(error)) {
         return;
-      } else {
-        this.setLoader(undefined, groupId, subGroupId);
       }
+      this.setLoader(undefined, groupId, subGroupId);
       throw error;
     }
   };
@@ -536,16 +429,10 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     if (!this.paginationOptions) return;
 
     if (isLinearReadOnly()) {
-      this.linearProjectSnapshots.delete(projectId);
-      runInAction(() => {
-        if (this.mountedSnapshotProjectId === projectId) {
-          this.mountedSnapshotProjectId = null;
-        }
-      });
+      await clearLinearProjectCache(projectId);
       return await this.fetchIssues(workspaceSlug, projectId, loadType, this.paginationOptions, true);
     }
 
-    if (this.mountedSnapshotProjectId !== projectId) return;
     return await this.fetchIssues(workspaceSlug, projectId, loadType, this.paginationOptions, true);
   };
 

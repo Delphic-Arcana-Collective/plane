@@ -5,7 +5,7 @@
  */
 
 import type { FC } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { combine } from "@atlaskit/pragmatic-drag-and-drop/combine";
 import { dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { autoScrollForElements } from "@atlaskit/pragmatic-drag-and-drop-auto-scroll/element";
@@ -14,7 +14,7 @@ import { useParams } from "next/navigation";
 import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import type { GroupByColumnTypes, TGroupedIssues } from "@plane/types";
 import { EIssueLayoutTypes, EIssueServiceType, EIssuesStoreType } from "@plane/types";
-import { decodeRouteProjectId, resolveLinearGroupedIssueIds, isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { decodeRouteProjectId, groupLinearIssuesFromFlatList, isLinearReadOnly } from "@/helpers/linear-display.helper";
 //hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
@@ -33,6 +33,7 @@ import type { IQuickActionProps, TRenderQuickActions } from "../list/list-view-t
 import { getSourceFromDropPayload } from "../utils";
 import { KanBan } from "./default";
 import { KanBanSwimLanes } from "./swimlanes";
+import { KanbanLayoutLoader } from "@/components/ui/loader/layouts/kanban-layout-loader";
 
 export type KanbanStoreType =
   | EIssuesStoreType.PROJECT
@@ -89,68 +90,41 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
 
   const { isDragging } = useKanbanView();
 
-  const displayFilters = issuesFilter?.issueFilters?.displayFilters;
-  const displayProperties = issuesFilter?.issueFilters?.displayProperties;
+  const displayFilters =
+    storeType === EIssuesStoreType.PROJECT && routeProjectId && issuesFilter && "getIssueFilters" in issuesFilter
+      ? issuesFilter.getIssueFilters(routeProjectId)?.displayFilters
+      : issuesFilter?.issueFilters?.displayFilters;
+  const displayProperties =
+    storeType === EIssuesStoreType.PROJECT && routeProjectId && issuesFilter && "getIssueFilters" in issuesFilter
+      ? issuesFilter.getIssueFilters(routeProjectId)?.displayProperties
+      : issuesFilter?.issueFilters?.displayProperties;
 
   const sub_group_by = displayFilters?.sub_group_by;
   const group_by = displayFilters?.group_by;
 
   const orderBy = displayFilters?.order_by;
-  const issueLoader = issues.getIssueLoader();
 
   useEffect(() => {
+    if (!displayFilters || !workspaceSlug || !routeProjectId) return;
     if (
       storeType === EIssuesStoreType.PROJECT &&
       isLinearReadOnly() &&
-      routeProjectId &&
       "isProjectDataReady" in issues &&
       issues.isProjectDataReady(routeProjectId)
     ) {
       return;
     }
     fetchIssues("init-loader", { canGroup: true, perPageCount: sub_group_by ? 10 : 30 }, viewId);
-  }, [
-    fetchIssues,
-    storeType,
-    group_by,
-    sub_group_by,
-    viewId,
-    routeProjectId,
-    issues,
-    issues.groupedIssueIds,
-    issueLoader,
-  ]);
+  }, [fetchIssues, storeType, group_by, sub_group_by, viewId, routeProjectId, displayFilters, workspaceSlug, issues]);
 
-  const isLinearKanbanReady =
-    storeType === EIssuesStoreType.PROJECT &&
-    isLinearReadOnly() &&
-    routeProjectId &&
-    "isProjectDataReady" in issues &&
-    issues.isProjectDataReady(routeProjectId);
-
-  const kanbanGroupedIssueIds = (() => {
-    if (
-      storeType === EIssuesStoreType.PROJECT &&
-      isLinearReadOnly() &&
-      routeProjectId &&
-      "isProjectDataReady" in issues &&
-      !issues.isProjectDataReady(routeProjectId)
-    ) {
-      return {} as TGroupedIssues;
-    }
+  const kanbanGroupedIssueIds = useMemo(() => {
     const raw = issues?.groupedIssueIds;
     if (!raw) return {} as TGroupedIssues;
-    if (isLinearKanbanReady) {
-      return raw as TGroupedIssues;
-    }
     if (storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && group_by) {
-      return (
-        resolveLinearGroupedIssueIds(raw as TGroupedIssues, issueMap, group_by as GroupByColumnTypes) ??
-        ({} as TGroupedIssues)
-      );
+      return groupLinearIssuesFromFlatList(raw as TGroupedIssues, issueMap, group_by as GroupByColumnTypes);
     }
     return raw as TGroupedIssues;
-  })();
+  }, [storeType, group_by, issues?.groupedIssueIds, issueMap]);
 
   const getKanbanGroupIssueCount = useCallback(
     (groupId: string | undefined, subGroupId: string | undefined, isSubGroupCumulative: boolean) => {
@@ -162,6 +136,12 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
     },
     [storeType, group_by, kanbanGroupedIssueIds, issues]
   );
+
+  const isLinearProjectLoading =
+    storeType === EIssuesStoreType.PROJECT &&
+    isLinearReadOnly() &&
+    routeProjectId &&
+    !issues.isProjectDataReady(routeProjectId);
 
   const fetchMoreIssues = useCallback(
     (groupId?: string, subgroupId?: string) => {
@@ -296,6 +276,10 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
   );
 
   const collapsedGroups = issuesFilter?.issueFilters?.kanbanFilters || { group_by: [], sub_group_by: [] };
+
+  if (isLinearProjectLoading) {
+    return <KanbanLayoutLoader />;
+  }
 
   return (
     <>

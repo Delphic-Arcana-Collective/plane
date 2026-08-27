@@ -16,6 +16,7 @@
     "fix:lint": "oxlint --fix .",
     "fix:format": "oxfmt .",
     "test": "vitest run",
+    "test:navigation-stress": "tsx tests/linear-navigation.stress.ts",
     "test:browser": "node tests/browser.smoke.mjs",
     "test:navigation-stress": "tsx tests/linear-navigation.stress.ts",
     "dev:worker": "wrangler dev",

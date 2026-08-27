@@ -6,7 +6,7 @@
 
 import { action, makeObservable, observable, runInAction } from "mobx";
 import { cloneDeep } from "lodash-es";
-// base class
+import { ALL_ISSUES } from "@plane/constants";
 import type {
   IssuePaginationOptions,
   TBulkOperationsPayload,
@@ -15,23 +15,24 @@ import type {
   TLoader,
   ViewFlags,
   TGroupedIssues,
-  TSubGroupedIssues,
   TGroupedIssueCount,
-  TIssuePaginationData,
 } from "@plane/types";
-// services
 import { WorkspaceService } from "@/services/workspace.service";
 import { isLinearAllIssuesView, isLinearReadOnly } from "@/helpers/linear-display.helper";
-// types
 import type { IBaseIssuesStore } from "../helpers/base-issues.store";
 import { BaseIssuesStore } from "../helpers/base-issues.store";
 import type { IIssueRootStore } from "../root.store";
 import type { IWorkspaceIssuesFilter } from "./filter.store";
+import {
+  clearLinearAllIssuesCache,
+  deleteLinearAllIssuesSnapshot,
+  openLinearAllIssuesFromCache,
+  persistLinearAllIssuesSnapshot,
+  type TLinearProjectSnapshot,
+} from "@/helpers/linear-project-snapshot.storage";
 
 export interface IWorkspaceIssues extends IBaseIssuesStore {
-  // observable
   viewFlags: ViewFlags;
-  // actions
   fetchIssues: (
     workspaceSlug: string,
     viewId: string,
@@ -60,7 +61,6 @@ export interface IWorkspaceIssues extends IBaseIssuesStore {
   quickAddIssue: undefined;
   clear(): void;
   isViewDataReady: (viewId: string) => boolean;
-  snapshotBeforeLinearNavigation: () => void;
 }
 
 export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues {
@@ -69,112 +69,144 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
     enableIssueCreation: true,
     enableInlineEditing: true,
   };
-  activeViewId: string | null = null;
-  private linearViewIssueCache = new Map<
-    string,
-    {
-      groupedIssueIds: TGroupedIssues | TSubGroupedIssues;
-      groupedIssueCount: TGroupedIssueCount;
-      issuePaginationData: TIssuePaginationData;
-      paginationOptions: IssuePaginationOptions | undefined;
-    }
-  >();
 
-  isViewDataReady = (viewId: string): boolean =>
-    isLinearAllIssuesView(viewId) && this.activeViewId === viewId && !!this.groupedIssueIds;
+  /** True when committed all-issues data matches the active workspace view. */
+  linearAllIssuesActive = false;
 
-  snapshotBeforeLinearNavigation = () => {
-    if (!this.activeViewId || !isLinearAllIssuesView(this.activeViewId) || !this.groupedIssueIds) return;
-    this.cacheViewIssues(this.activeViewId);
-    this.bumpFetchSequence();
+  isViewDataReady = (viewId: string): boolean => {
+    if (!isLinearAllIssuesView(viewId)) return false;
+    if (!this.linearAllIssuesActive) return false;
+
+    const flatIds = this.groupedIssueIds?.[ALL_ISSUES];
+    return Array.isArray(flatIds) && flatIds.length > 0;
   };
 
-  protected override beginFetch(
-    loadType: TLoader,
-    shouldClearPaginationOptions: boolean,
-    preserveIssueList = false
-  ): number {
-    if (!isLinearReadOnly()) {
-      return super.beginFetch(loadType, shouldClearPaginationOptions, preserveIssueList);
+  private clearLinearDisplay() {
+    this.groupedIssueIds = undefined;
+    this.groupedIssueCount = {};
+    this.issuePaginationData = {};
+    this.linearAllIssuesActive = false;
+  }
+
+  private isValidWorkspaceSnapshot(snapshot: TLinearProjectSnapshot): boolean {
+    const flatIds = snapshot.groupedIssueIds[ALL_ISSUES];
+    return Array.isArray(flatIds) && flatIds.length > 0 && snapshot.issues.length > 0;
+  }
+
+  private applySnapshotToStore(snapshot: TLinearProjectSnapshot) {
+    this.rootIssueStore.issues.addIssue(snapshot.issues);
+    this.groupedIssueIds = cloneDeep(snapshot.groupedIssueIds);
+    this.groupedIssueCount = cloneDeep(snapshot.groupedIssueCount);
+    this.issuePaginationData = cloneDeep(snapshot.issuePaginationData);
+    this.paginationOptions = snapshot.paginationOptions ? { ...snapshot.paginationOptions } : undefined;
+    this.linearAllIssuesActive = true;
+    this.setLoader(undefined);
+  }
+
+  private showLinearLoader(loadType: TLoader = "init-loader") {
+    this.clearLinearDisplay();
+    this.setLoader(loadType);
+  }
+
+  private async linearOpenAllIssues(): Promise<boolean> {
+    const snapshot = await openLinearAllIssuesFromCache();
+
+    if (!snapshot || !this.isValidWorkspaceSnapshot(snapshot)) {
+      if (snapshot) {
+        await deleteLinearAllIssuesSnapshot();
+      }
+      runInAction(() => {
+        this.showLinearLoader();
+      });
+      return false;
     }
 
-    const sequence = ++this.fetchSequence;
     runInAction(() => {
-      this.setLoader(loadType);
-      if (!preserveIssueList) {
-        this.groupedIssueIds = undefined;
-        this.issuePaginationData = {};
-        this.groupedIssueCount = {};
-      }
-      if (shouldClearPaginationOptions) {
-        this.paginationOptions = undefined;
-      }
-    });
-    return sequence;
-  }
-
-  private cacheViewIssues(viewId: string) {
-    if (!this.groupedIssueIds) return;
-    this.linearViewIssueCache.set(viewId, {
-      groupedIssueIds: cloneDeep(this.groupedIssueIds),
-      groupedIssueCount: cloneDeep(this.groupedIssueCount),
-      issuePaginationData: cloneDeep(this.issuePaginationData),
-      paginationOptions: this.paginationOptions ? { ...this.paginationOptions } : undefined,
-    });
-  }
-
-  private restoreCachedViewIssues(viewId: string): boolean {
-    const cached = this.linearViewIssueCache.get(viewId);
-    if (!cached) return false;
-
-    runInAction(() => {
-      this.groupedIssueIds = cloneDeep(cached.groupedIssueIds);
-      this.groupedIssueCount = cloneDeep(cached.groupedIssueCount);
-      this.issuePaginationData = cloneDeep(cached.issuePaginationData);
-      this.paginationOptions = cached.paginationOptions ? { ...cached.paginationOptions } : undefined;
-      this.activeViewId = viewId;
+      this.applySnapshotToStore(snapshot);
     });
     return true;
   }
 
-  private rejectStaleViewResponse(sequence: number, viewId: string): boolean {
-    return this.isStaleFetch(sequence) || this.activeViewId !== viewId;
+  private async linearCommitSnapshot(snapshot: TLinearProjectSnapshot) {
+    if (!this.isValidWorkspaceSnapshot(snapshot)) {
+      runInAction(() => {
+        this.showLinearLoader();
+      });
+      return;
+    }
+
+    const prepared: TLinearProjectSnapshot = {
+      groupedIssueIds: cloneDeep(snapshot.groupedIssueIds),
+      groupedIssueCount: cloneDeep(snapshot.groupedIssueCount),
+      issuePaginationData: cloneDeep(snapshot.issuePaginationData),
+      paginationOptions: snapshot.paginationOptions ? { ...snapshot.paginationOptions } : undefined,
+      issues: cloneDeep(snapshot.issues),
+    };
+
+    const stillActive = await persistLinearAllIssuesSnapshot(prepared);
+    if (!stillActive) return;
+
+    runInAction(() => {
+      this.applySnapshotToStore(prepared);
+    });
   }
-  // service
+
+  private normalizeGroupedIssueIds(groupedIssues: TGroupedIssues): TGroupedIssues {
+    const flatIds = groupedIssues[ALL_ISSUES];
+    if (Array.isArray(flatIds) && flatIds.length > 0) {
+      return groupedIssues;
+    }
+
+    const mergedIds = Object.entries(groupedIssues)
+      .filter(([key]) => key !== ALL_ISSUES)
+      .flatMap(([, bucket]) => (Array.isArray(bucket) ? bucket : []));
+
+    if (mergedIds.length === 0) return groupedIssues;
+
+    return {
+      ...groupedIssues,
+      [ALL_ISSUES]: [...new Set(mergedIds)],
+    };
+  }
+
+  private createSnapshotFromFetch(
+    response: TIssuesResponse,
+    options: IssuePaginationOptions,
+    groupedIssueIds: TGroupedIssues,
+    groupedIssueCount: TGroupedIssueCount,
+    issueList: TIssue[]
+  ): TLinearProjectSnapshot {
+    this.storePreviousPaginationValues(response, options);
+
+    return {
+      groupedIssueIds: cloneDeep(groupedIssueIds),
+      groupedIssueCount: cloneDeep(groupedIssueCount),
+      issuePaginationData: cloneDeep(this.issuePaginationData),
+      paginationOptions: this.paginationOptions ? { ...this.paginationOptions } : undefined,
+      issues: cloneDeep(issueList),
+    };
+  }
+
   workspaceService;
-  // filterStore
   issueFilterStore;
 
   constructor(_rootStore: IIssueRootStore, issueFilterStore: IWorkspaceIssuesFilter) {
     super(_rootStore, issueFilterStore);
 
     makeObservable(this, {
-      activeViewId: observable,
-      // action
+      linearAllIssuesActive: observable,
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,
-      snapshotBeforeLinearNavigation: action,
     });
-    // services
     this.workspaceService = new WorkspaceService();
-    // filter store
     this.issueFilterStore = issueFilterStore;
   }
 
   fetchParentStats = () => {};
 
-  /** */
   updateParentStats = () => {};
 
-  /**
-   * This method is called to fetch the first issues of pagination
-   * @param workspaceSlug
-   * @param viewId
-   * @param loadType
-   * @param options
-   * @returns
-   */
   fetchIssues = async (
     workspaceSlug: string,
     viewId: string,
@@ -182,77 +214,84 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
     options: IssuePaginationOptions,
     isExistingPaginationOptions: boolean = false
   ) => {
-    const isLinearAll = isLinearAllIssuesView(viewId);
-
-    if (isLinearAll) {
-      this.activeViewId = viewId;
+    if (isLinearReadOnly() && isLinearAllIssuesView(viewId)) {
+      return this.fetchLinearAllIssues(workspaceSlug, viewId, loadType, options, isExistingPaginationOptions);
     }
 
-    if (isLinearAll && !isExistingPaginationOptions) {
-      if (this.isViewDataReady(viewId)) {
-        this.bumpFetchSequence();
-        return;
-      }
-      if (this.restoreCachedViewIssues(viewId)) {
-        this.bumpFetchSequence();
-        runInAction(() => {
-          this.setLoader(undefined);
-        });
-        return;
-      }
-    }
-
-    const preserveIssueList = isLinearAll && !!this.groupedIssueIds;
-    const sequence = this.beginFetch(loadType, !isExistingPaginationOptions, preserveIssueList);
+    const sequence = this.beginFetch(loadType, !isExistingPaginationOptions, false);
 
     try {
-      // get params from pagination options
       const params = this.issueFilterStore?.getFilterParams(options, viewId, undefined, undefined, undefined);
-      // call the fetch issues API with the params
       const response = await this.workspaceService.getViewIssues(workspaceSlug, params, {
-        signal: isLinearAll ? undefined : this.controller.signal,
+        signal: this.controller.signal,
       });
 
-      if (isLinearAll && this.rejectStaleViewResponse(sequence, viewId)) return;
-      if (!isLinearAll && this.isStaleFetch(sequence)) return;
+      if (this.isStaleFetch(sequence)) return;
 
-      // after fetching issues, call the base method to process the response further
       this.onfetchIssues(response, options, workspaceSlug, undefined, undefined, !isExistingPaginationOptions);
-      if (isLinearAll) {
-        this.cacheViewIssues(viewId);
-      }
       return response;
     } catch (error) {
-      if ((isLinearAll && this.rejectStaleViewResponse(sequence, viewId)) || this.isAbortError(error)) return;
-      if (!isLinearAll && this.isStaleFetch(sequence)) return;
-      // set loader to undefined if errored out
+      if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
       this.setLoader(undefined);
       throw error;
     }
   };
 
-  /**
-   * This method is called subsequent pages of pagination
-   * if groupId/subgroupId is provided, only that specific group's next page is fetched
-   * else all the groups' next page is fetched
-   * @param workspaceSlug
-   * @param viewId
-   * @param groupId
-   * @param subGroupId
-   * @returns
-   */
+  private fetchLinearAllIssues = async (
+    workspaceSlug: string,
+    viewId: string,
+    loadType: TLoader,
+    options: IssuePaginationOptions,
+    isExistingPaginationOptions: boolean
+  ) => {
+    if (!isExistingPaginationOptions) {
+      const loaded = await this.linearOpenAllIssues();
+      if (loaded) {
+        return;
+      }
+    }
+
+    runInAction(() => {
+      this.showLinearLoader(loadType);
+    });
+
+    try {
+      const params = this.issueFilterStore?.getFilterParams(options, viewId, undefined, undefined, undefined);
+      const response = await this.workspaceService.getViewIssues(workspaceSlug, params, {
+        signal: undefined,
+      });
+
+      const { issueList, groupedIssues, groupedIssueCount } = this.processIssueResponse(response);
+      const groupedIssueIds = this.normalizeGroupedIssueIds(groupedIssues as TGroupedIssues);
+      const flatIds = groupedIssueIds[ALL_ISSUES];
+      if (!Array.isArray(flatIds) || flatIds.length === 0) {
+        runInAction(() => {
+          this.showLinearLoader();
+        });
+        return;
+      }
+
+      const snapshot = this.createSnapshotFromFetch(response, options, groupedIssueIds, groupedIssueCount, issueList);
+      await this.linearCommitSnapshot(snapshot);
+      return response;
+    } catch (error) {
+      if (this.isAbortError(error)) return;
+      runInAction(() => {
+        this.showLinearLoader();
+      });
+      throw error;
+    }
+  };
+
   fetchNextIssues = async (workspaceSlug: string, viewId: string, groupId?: string, subGroupId?: string) => {
     const cursorObject = this.getPaginationData(groupId, subGroupId);
-    // if there are no pagination options and the next page results do not exist the return
     if (!this.paginationOptions || (cursorObject && !cursorObject?.nextPageResults)) return;
 
     const sequence = this.bumpFetchSequence();
 
     try {
-      // set Loader
       this.setLoader("pagination", groupId, subGroupId);
 
-      // get params from stored pagination options
       const params = this.issueFilterStore?.getFilterParams(
         this.paginationOptions,
         viewId,
@@ -260,43 +299,31 @@ export class WorkspaceIssues extends BaseIssuesStore implements IWorkspaceIssues
         groupId,
         subGroupId
       );
-      // call the fetch issues API with the params for next page in issues
       const response = await this.workspaceService.getViewIssues(workspaceSlug, params);
 
       if (this.isStaleFetch(sequence)) return;
 
-      // after the next page of issues are fetched, call the base method to process the response
       this.onfetchNexIssues(response, groupId, subGroupId);
       return response;
     } catch (error) {
       if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
-      // set Loader as undefined if errored out
       this.setLoader(undefined, groupId, subGroupId);
       throw error;
     }
   };
 
-  /**
-   * This Method exists to fetch the first page of the issues with the existing stored pagination
-   * This is useful for refetching when filters, groupBy, orderBy etc changes
-   * @param workspaceSlug
-   * @param viewId
-   * @param loadType
-   * @returns
-   */
   fetchIssuesWithExistingPagination = async (workspaceSlug: string, viewId: string, loadType: TLoader) => {
     if (!this.paginationOptions) return;
+
     if (isLinearAllIssuesView(viewId)) {
-      this.linearViewIssueCache.delete(viewId);
+      await clearLinearAllIssuesCache();
     }
+
     return await this.fetchIssues(workspaceSlug, viewId, loadType, this.paginationOptions, true);
   };
 
-  // Using aliased names as they cannot be overridden in other stores
   archiveBulkIssues = this.bulkArchiveIssues;
   updateIssue = this.issueUpdate;
   archiveIssue = this.issueArchive;
-
-  // Setting them as undefined as they can not performed on workspace issues
   quickAddIssue = undefined;
 }

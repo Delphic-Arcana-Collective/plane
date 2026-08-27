@@ -12,6 +12,7 @@ import { setCustomNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/el
 import { attachInstruction, extractInstruction } from "@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item";
 import { observer } from "mobx-react";
 import { useParams, usePathname, useRouter } from "next/navigation";
+import Link from "next/link";
 import { createRoot } from "react-dom/client";
 import scrollIntoView from "smooth-scroll-into-view-if-needed";
 import { Settings, Share2, LogOut, MoreHorizontal } from "lucide-react";
@@ -27,8 +28,6 @@ import { Tooltip } from "@plane/propel/tooltip";
 import { CustomMenu, DropIndicator, DragHandle, ControlLink } from "@plane/ui";
 import { cn } from "@plane/utils";
 import { getLinearAllIssuesPath, isLinearDisplayMode, isLinearReadOnly } from "@/helpers/linear-display.helper";
-import { EIssuesStoreType } from "@plane/types";
-import { useIssues } from "@/hooks/store/use-issues";
 // components
 import { DEFAULT_TAB_KEY, getTabUrl } from "@/components/navigation/tab-navigation-utils";
 import { useTabPreferences } from "@/components/navigation/use-tab-preferences";
@@ -75,8 +74,6 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   // store hooks
   const { t } = useTranslation();
   const { getPartialProjectById } = useProject();
-  const { issues: projectIssues } = useIssues(EIssuesStoreType.PROJECT);
-  const { issues: workspaceIssues } = useIssues(EIssuesStoreType.GLOBAL);
   const { isMobile } = usePlatformOS();
   const { allowPermissions } = useUserPermissions();
   const { getIsProjectListOpen, toggleProjectListOpen } = useCommandPalette();
@@ -277,25 +274,17 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
 
   const isAccordionMode = !isLinearMode && projectPreferences.navigationMode === "ACCORDION";
 
-  const handleItemClick = (event?: React.MouseEvent) => {
+  const handleLinearLinkClick = () => {
+    if (isExtendedProjectSidebarOpened) {
+      toggleExtendedProjectSidebar(false);
+    }
+    if (window.innerWidth < 768) {
+      toggleSidebar();
+    }
+  };
+
+  const handleItemClick = (_event?: React.MouseEvent) => {
     if (isLinearMode) {
-      event?.preventDefault();
-      if (isProjectSelected) {
-        projectIssues.snapshotBeforeLinearNavigation(projectId);
-        router.push(linearAllIssuesUrl);
-      } else {
-        if (activeProjectId && activeProjectId !== projectId) {
-          projectIssues.snapshotBeforeLinearNavigation(activeProjectId);
-        }
-        workspaceIssues.snapshotBeforeLinearNavigation();
-        router.push(linearIssuesUrl);
-      }
-      if (isExtendedProjectSidebarOpened) {
-        toggleExtendedProjectSidebar(false);
-      }
-      if (window.innerWidth < 768) {
-        toggleSidebar();
-      }
       return;
     }
 
@@ -313,6 +302,7 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   const shouldHighlightProject =
     isProjectSelected && (isLinearMode || projectPreferences.navigationMode !== "ACCORDION");
   const projectLinkUrl = isLinearMode ? linearIssuesUrl : defaultTabUrl;
+  const linearHref = isProjectSelected ? linearAllIssuesUrl : linearIssuesUrl;
 
   return (
     <>
@@ -363,32 +353,43 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
               </Tooltip>
             )}
             <>
-              <ControlLink href={projectLinkUrl} className="flex flex-grow truncate" onClick={handleItemClick}>
-                {isAccordionMode ? (
-                  <Disclosure.Button
-                    as="button"
-                    type="button"
-                    className={cn("flex w-full flex-grow items-center gap-1.5 text-left select-none", {})}
-                    aria-label={
-                      isProjectListOpen
-                        ? t("aria_labels.projects_sidebar.close_project_menu")
-                        : t("aria_labels.projects_sidebar.open_project_menu")
-                    }
-                  >
-                    <div className="grid size-4 flex-shrink-0 place-items-center">
-                      <Logo logo={project.logo_props} size={16} />
-                    </div>
-                    <p className="truncate text-13 font-medium text-secondary">{project.name}</p>
-                  </Disclosure.Button>
-                ) : (
+              {isLinearMode ? (
+                <Link href={linearHref} className="flex flex-grow truncate" onClick={handleLinearLinkClick}>
                   <div className="flex w-full flex-grow items-center gap-1.5 text-left select-none">
                     <div className="grid size-4 flex-shrink-0 place-items-center">
                       <Logo logo={project.logo_props} size={16} />
                     </div>
                     <p className="truncate text-13 font-medium text-secondary">{project.name}</p>
                   </div>
-                )}
-              </ControlLink>
+                </Link>
+              ) : (
+                <ControlLink href={projectLinkUrl} className="flex flex-grow truncate" onClick={handleItemClick}>
+                  {isAccordionMode ? (
+                    <Disclosure.Button
+                      as="button"
+                      type="button"
+                      className={cn("flex w-full flex-grow items-center gap-1.5 text-left select-none", {})}
+                      aria-label={
+                        isProjectListOpen
+                          ? t("aria_labels.projects_sidebar.close_project_menu")
+                          : t("aria_labels.projects_sidebar.open_project_menu")
+                      }
+                    >
+                      <div className="grid size-4 flex-shrink-0 place-items-center">
+                        <Logo logo={project.logo_props} size={16} />
+                      </div>
+                      <p className="truncate text-13 font-medium text-secondary">{project.name}</p>
+                    </Disclosure.Button>
+                  ) : (
+                    <div className="flex w-full flex-grow items-center gap-1.5 text-left select-none">
+                      <div className="grid size-4 flex-shrink-0 place-items-center">
+                        <Logo logo={project.logo_props} size={16} />
+                      </div>
+                      <p className="truncate text-13 font-medium text-secondary">{project.name}</p>
+                    </div>
+                  )}
+                </ControlLink>
+              )}
               <div className="flex items-center gap-1">
                 {/* TODO(linear-display): Re-enable project quick actions (publish, copy link, settings, etc.) when write support is added. */}
                 {!isLinearReadOnly() && (

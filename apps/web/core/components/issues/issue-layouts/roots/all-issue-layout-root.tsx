@@ -45,7 +45,7 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
   const {
     issuesFilter,
     issuesFilter: { filters, fetchFilters, updateFilterExpression },
-    issues: { clear, groupedIssueIds, fetchIssues, fetchNextIssues, isViewDataReady },
+    issues: { clear, groupedIssueIds, fetchIssues, fetchNextIssues },
   } = useIssues(EIssuesStoreType.GLOBAL);
   const { fetchAllGlobalViews, getViewDetailsById } = useGlobalView();
   // Derived values
@@ -99,17 +99,14 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
     { revalidateIfStale: false, revalidateOnFocus: false }
   );
 
-  // Fetch issues — SWR runs once per workspace view; linear mode uses in-memory cache on navigation.
+  // Fetch issues — non-linear views only; linear all-issues is route-driven below.
   const { isLoading: issuesLoading } = useSWR(
-    workspaceSlug && globalViewId ? `WORKSPACE_GLOBAL_VIEW_ISSUES_${workspaceSlug}_${globalViewId}` : null,
+    workspaceSlug && globalViewId && !isLinearAllIssues
+      ? `WORKSPACE_GLOBAL_VIEW_ISSUES_${workspaceSlug}_${globalViewId}`
+      : null,
     async () => {
       if (workspaceSlug && globalViewId) {
-        if (isLinearAllIssuesView(globalViewId) && isViewDataReady(globalViewId)) {
-          return;
-        }
-        if (!isLinearAllIssuesView(globalViewId) || !groupedIssueIds) {
-          clear();
-        }
+        clear();
         toggleLoading(true);
         await fetchFilters(workspaceSlug, globalViewId);
         const displayFilters = issuesFilter.getIssueFilters(globalViewId)?.displayFilters;
@@ -121,9 +118,8 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
         }
 
         const subGroupBy = displayFilters?.sub_group_by;
-        const isLinearAll = isLinearAllIssuesView(globalViewId);
-        const canGroup = !isLinearAll && layout === EIssueLayoutTypes.KANBAN;
-        const perPageCount = isLinearAll ? 100 : layout === EIssueLayoutTypes.KANBAN ? (subGroupBy ? 10 : 30) : 100;
+        const canGroup = layout === EIssueLayoutTypes.KANBAN;
+        const perPageCount = layout === EIssueLayoutTypes.KANBAN ? (subGroupBy ? 10 : 30) : 100;
 
         await fetchIssues(workspaceSlug, globalViewId, groupedIssueIds ? "mutation" : "init-loader", {
           canGroup,
@@ -135,10 +131,9 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
     { revalidateIfStale: false, revalidateOnFocus: false }
   );
 
-  // Linear all-issues: refetch on navigation when SWR cache is stale but MobX store is empty.
+  // Linear all-issues: fetch on route entry (sessionStorage restore lives in the store).
   useEffect(() => {
     if (!workspaceSlug || !globalViewId || !isLinearAllIssues) return;
-    if (isViewDataReady(globalViewId)) return;
 
     let cancelled = false;
 
@@ -162,7 +157,7 @@ export const AllIssueLayoutRoot = observer(function AllIssueLayoutRoot(props: Pr
     return () => {
       cancelled = true;
     };
-  }, [workspaceSlug, globalViewId, isLinearAllIssues, isViewDataReady, fetchFilters, fetchIssues, issuesFilter]);
+  }, [workspaceSlug, globalViewId, isLinearAllIssues, fetchFilters, issuesFilter, fetchIssues]);
 
   // Empty state
   if (!isLoading && !globalViewsLoading && !issuesLoading && !viewDetails && !isDefaultView) {

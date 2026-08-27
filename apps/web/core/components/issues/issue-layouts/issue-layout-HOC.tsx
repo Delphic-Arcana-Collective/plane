@@ -21,7 +21,6 @@ import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
 import { decodeRouteProjectId, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // local imports
 import { IssueLayoutEmptyState } from "./empty-states";
-import { LinearProjectIssuesLoader } from "./linear-project-issues-loader";
 
 function ActiveLoader(props: { layout: EIssueLayoutTypes }) {
   const { layout } = props;
@@ -58,11 +57,9 @@ export const IssueLayoutHOC = observer(function IssueLayoutHOC(props: Props) {
     storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && "isProjectDataReady" in issues;
 
   if (isLinearProject) {
-    const ready = !!routeProjectId && issues.isProjectDataReady(routeProjectId);
-    if (!ready) {
-      return <LinearProjectIssuesLoader />;
+    if (!routeProjectId || !issues.isProjectDataReady(routeProjectId)) {
+      return <ActiveLoader layout={layout} />;
     }
-
     return <LayoutErrorBoundary key={layout}>{props.children}</LayoutErrorBoundary>;
   }
 
