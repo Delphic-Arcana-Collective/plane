@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 set OPENSSL_CONF=
-cd /d C:\Users\azusaing\plane
+cd /d "%~dp0"
 
 if not defined ROUNDS set ROUNDS=100
 if not defined WEB_URL set WEB_URL=http://127.0.0.1:3000
@@ -16,7 +16,7 @@ if errorlevel 1 (
   for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8799" ^| findstr LISTENING') do taskkill /F /PID %%a >nul 2>&1
   timeout /t 2 /nobreak >nul
   echo [runner] starting web dev...
-  start "plane-web" /B cmd /c "set OPENSSL_CONF=&& cd /d C:\Users\azusaing\plane&& pnpm --filter=web dev > stress-logs\web-dev.log 2>&1"
+  start "plane-web" /B cmd /c "set OPENSSL_CONF=&& cd /d %~dp0&& pnpm --filter=web dev > stress-logs\web-dev.log 2>&1"
   echo [runner] waiting for web...
   set WAIT_TRIES=0
   :waitweb
