@@ -5,8 +5,9 @@
  */
 
 import { observer } from "mobx-react";
+import { useParams } from "next/navigation";
 // plane imports
-import { EIssueLayoutTypes } from "@plane/types";
+import { EIssueLayoutTypes, EIssuesStoreType } from "@plane/types";
 // components
 import { LayoutErrorBoundary } from "@/components/common/layout-error-boundary";
 import { CalendarLayoutLoader } from "@/components/ui/loader/layouts/calendar-layout-loader";
@@ -17,6 +18,7 @@ import { SpreadsheetLayoutLoader } from "@/components/ui/loader/layouts/spreadsh
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
 import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
+import { decodeRouteProjectId, isLinearReadOnly } from "@/helpers/linear-display.helper";
 // local imports
 import { IssueLayoutEmptyState } from "./empty-states";
 
@@ -47,7 +49,19 @@ export const IssueLayoutHOC = observer(function IssueLayoutHOC(props: Props) {
   const { layout } = props;
 
   const storeType = useIssueStoreType();
+  const { projectId: routeProjectIdParam } = useParams();
+  const routeProjectId = decodeRouteProjectId(routeProjectIdParam?.toString());
   const { issues } = useIssues(storeType);
+
+  const isLinearProject =
+    storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && "isProjectViewReady" in issues;
+
+  if (isLinearProject) {
+    if (!routeProjectId || !issues.isProjectViewReady(routeProjectId)) {
+      return <ActiveLoader layout={layout} />;
+    }
+    return <LayoutErrorBoundary key={layout}>{props.children}</LayoutErrorBoundary>;
+  }
 
   const issueCount = issues.getGroupIssueCount(undefined, undefined, false);
 

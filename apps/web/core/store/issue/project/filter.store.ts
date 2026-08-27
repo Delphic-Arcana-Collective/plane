@@ -27,7 +27,11 @@ import { IssueFilterHelperStore } from "../helpers/issue-filter-helper.store";
 // types
 import type { IIssueRootStore } from "../root.store";
 import { ProjectService } from "@/services/project";
-import { getLinearDefaultDisplayFilters, isLinearDisplayMode } from "@/helpers/linear-display.helper";
+import {
+  getLinearDefaultDisplayFilters,
+  isLinearDisplayMode,
+  decodeRouteProjectId,
+} from "@/helpers/linear-display.helper";
 // constants
 // services
 
@@ -84,14 +88,14 @@ export class ProjectIssuesFilter extends IssueFilterHelperStore implements IProj
   }
 
   get issueFilters() {
-    const projectId = this.rootIssueStore.projectId;
+    const projectId = decodeRouteProjectId(this.rootIssueStore.projectId);
     if (!projectId) return undefined;
 
     return this.getIssueFilters(projectId);
   }
 
   get appliedFilters() {
-    const projectId = this.rootIssueStore.projectId;
+    const projectId = decodeRouteProjectId(this.rootIssueStore.projectId);
     if (!projectId) return undefined;
 
     return this.getAppliedFilters(projectId);

@@ -14,6 +14,7 @@ import { useParams } from "next/navigation";
 import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import type { EIssuesStoreType } from "@plane/types";
 import { EIssueServiceType, EIssueLayoutTypes } from "@plane/types";
+import { decodeRouteProjectId } from "@/helpers/linear-display.helper";
 //hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
@@ -62,7 +63,8 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
     isEpic = false,
   } = props;
   // router
-  const { workspaceSlug, projectId } = useParams();
+  const { workspaceSlug, projectId: routeProjectIdParam } = useParams();
+  const routeProjectId = decodeRouteProjectId(routeProjectIdParam?.toString());
   // store hooks
   const storeType = useIssueStoreType() as KanbanStoreType;
   const { allowPermissions } = useUserPermissions();
@@ -87,8 +89,13 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
 
   const { isDragging } = useKanbanView();
 
-  const displayFilters = issuesFilter?.issueFilters?.displayFilters;
-  const displayProperties = issuesFilter?.issueFilters?.displayProperties;
+  const issueFiltersForView =
+    storeType === EIssuesStoreType.PROJECT && routeProjectId && issuesFilter && "getIssueFilters" in issuesFilter
+      ? issuesFilter.getIssueFilters(routeProjectId)
+      : issuesFilter?.issueFilters;
+
+  const displayFilters = issueFiltersForView?.displayFilters;
+  const displayProperties = issueFiltersForView?.displayProperties;
 
   const sub_group_by = displayFilters?.sub_group_by;
   const group_by = displayFilters?.group_by;
@@ -96,8 +103,9 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
   const orderBy = displayFilters?.order_by;
 
   useEffect(() => {
+    if (storeType === EIssuesStoreType.PROJECT && !routeProjectId) return;
     fetchIssues("init-loader", { canGroup: true, perPageCount: sub_group_by ? 10 : 30 }, viewId);
-  }, [fetchIssues, storeType, group_by, sub_group_by, viewId]);
+  }, [fetchIssues, storeType, group_by, sub_group_by, viewId, routeProjectId]);
 
   const fetchMoreIssues = useCallback(
     (groupId?: string, subgroupId?: string) => {
@@ -230,7 +238,11 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
         });
       }
     },
-    [workspaceSlug, issuesFilter, projectId, updateFilters]
+    [
+	workspaceSlug,
+	issuesFilter,
+	updateFilters
+]
   );
 
   const collapsedGroups = issuesFilter?.issueFilters?.kanbanFilters || { group_by: [], sub_group_by: [] };

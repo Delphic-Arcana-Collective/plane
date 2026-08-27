@@ -51,6 +51,8 @@ export interface IProjectIssues extends IBaseIssuesStore {
   removeBulkIssues: (workspaceSlug: string, projectId: string, issueIds: string[]) => Promise<void>;
   archiveBulkIssues: (workspaceSlug: string, projectId: string, issueIds: string[]) => Promise<void>;
   bulkUpdateProperties: (workspaceSlug: string, projectId: string, data: TBulkOperationsPayload) => Promise<void>;
+  loadedProjectId: string | null;
+  isProjectViewReady: (projectId: string) => boolean;
 }
 
 export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
@@ -60,6 +62,11 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   issueFilterStore: IProjectIssuesFilter;
   /** Project id for the issues currently loaded in groupedIssueIds. */
   loadedProjectId: string | null = null;
+
+  isProjectViewReady = (projectId: string): boolean => {
+    if (!isLinearReadOnly()) return true;
+    return this.loadedProjectId === projectId && this.groupedIssueIds !== undefined;
+  };
 
   get viewFlags(): ViewFlags {
     if (isLinearReadOnly()) {
@@ -118,6 +125,10 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     options: IssuePaginationOptions,
     isExistingPaginationOptions: boolean = false
   ) => {
+    if (isLinearReadOnly()) {
+      return this.fetchLinearProjectIssues(workspaceSlug, projectId, loadType, options, isExistingPaginationOptions);
+    }
+
     const sequence = this.beginFetch(loadType, !isExistingPaginationOptions);
 
     try {
@@ -140,6 +151,41 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       if (this.isStaleFetch(sequence) || this.isAbortError(error)) return;
       // set loader to undefined if errored out
       this.setLoader(undefined);
+      throw error;
+    }
+  };
+
+  private fetchLinearProjectIssues = async (
+    workspaceSlug: string,
+    projectId: string,
+    loadType: TLoader,
+    options: IssuePaginationOptions,
+    isExistingPaginationOptions: boolean
+  ) => {
+    const sequence = this.bumpFetchSequence();
+
+    runInAction(() => {
+      this.setLoader(loadType);
+    });
+
+    try {
+      const params = this.issueFilterStore?.getFilterParams(options, projectId, undefined, undefined, undefined);
+      const response = await this.issueService.getIssues(workspaceSlug, projectId, params, {
+        signal: undefined,
+      });
+
+      if (this.isStaleFetch(sequence)) return;
+
+      this.onfetchIssues(response, options, workspaceSlug, projectId, undefined, !isExistingPaginationOptions);
+      runInAction(() => {
+        this.loadedProjectId = projectId;
+      });
+      return response;
+    } catch (error) {
+      if (this.isStaleFetch(sequence)) return;
+      runInAction(() => {
+        this.setLoader(undefined);
+      });
       throw error;
     }
   };

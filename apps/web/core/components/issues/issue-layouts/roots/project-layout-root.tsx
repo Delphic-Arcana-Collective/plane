@@ -64,7 +64,13 @@ export const ProjectLayoutRoot = observer(function ProjectLayoutRoot() {
     { revalidateIfStale: false, revalidateOnFocus: false }
   );
 
-  if (!workspaceSlug || !projectId || !workItemFilters) return <></>;
+  if (!workspaceSlug || !projectId || !workItemFilters) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-surface-1">
+        <Spinner />
+      </div>
+    );
+  }
   return (
     <IssuesStoreContext.Provider value={EIssuesStoreType.PROJECT}>
       <ProjectLevelWorkItemFiltersHOC
