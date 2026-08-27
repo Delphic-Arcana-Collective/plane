@@ -1,10 +1,6 @@
 /**
  * Production navigation stress test against a deployed Linear dashboard.
- * Runs multiple parallel browser sessions: project A → B → A (slow clicks).
- *
- * Usage:
- *   WEB_URL=https://dashboard.delphic.studio WORKSPACE_SLUG=delphic PARALLEL=5 ROUNDS=20 \
- *     pnpm --filter=bff exec tsx tests/linear-navigation.prod.stress.ts
+ * Sidebar clicks: A → B → A with slow delay between clicks.
  */
 
 /* oxlint-disable no-await-in-loop */
@@ -22,7 +18,7 @@ const CHROME_PATH =
     ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
     : "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 
-type ProjectRef = { id: string; name: string; selector: string };
+type ProjectRef = { id: string; name: string };
 
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -34,7 +30,7 @@ async function discoverProjects(page: Page): Promise<[ProjectRef, ProjectRef]> {
     timeout: 120_000,
   });
   await page.evaluate(() => sessionStorage.clear());
-  await sleep(3000);
+  await sleep(2000);
 
   await page.waitForFunction(() => document.querySelectorAll('a[href*="/projects/"][href*="/issues"]').length >= 2, {
     timeout: 90_000,
@@ -46,7 +42,7 @@ async function discoverProjects(page: Page): Promise<[ProjectRef, ProjectRef]> {
       document.querySelectorAll('a[href*="/projects/"][href*="/issues"]')
     ) as HTMLAnchorElement[];
     const seen = new Set<string>();
-    const out: { id: string; name: string; selector: string }[] = [];
+    const out: { id: string; name: string }[] = [];
 
     for (const link of links) {
       const match = link.pathname.match(/\/projects\/([^/]+)\/issues\/?$/);
@@ -54,8 +50,7 @@ async function discoverProjects(page: Page): Promise<[ProjectRef, ProjectRef]> {
       const id = decodeURIComponent(match[1]);
       if (seen.has(id)) continue;
       seen.add(id);
-      const name = (link.textContent || id).trim();
-      out.push({ id, name, selector: "" });
+      out.push({ id, name: (link.textContent || id).trim() });
       if (out.length >= 2) break;
     }
 
@@ -69,18 +64,6 @@ async function discoverProjects(page: Page): Promise<[ProjectRef, ProjectRef]> {
   return [projects[0], projects[1]];
 }
 
-function projectIssuesUrl(projectId: string) {
-  return `${WEB_URL}/${WORKSPACE_SLUG}/projects/${encodeURIComponent(projectId)}/issues`;
-}
-
-async function navigateProject(page: Page, project: ProjectRef) {
-  await page.goto(projectIssuesUrl(project.id), {
-    waitUntil: "networkidle2",
-    timeout: 120_000,
-  });
-  if (CLICK_DELAY_MS > 0) await sleep(CLICK_DELAY_MS);
-}
-
 async function clickProject(page: Page, project: ProjectRef) {
   const clicked = await page.evaluate(
     ({ projectId, name }) => {
@@ -88,8 +71,7 @@ async function clickProject(page: Page, project: ProjectRef) {
         document.querySelectorAll('a[href*="/projects/"][href*="/issues"]')
       ) as HTMLAnchorElement[];
       for (const link of links) {
-        const decodedPath = decodeURIComponent(link.pathname);
-        if (decodedPath.includes(projectId)) {
+        if (decodeURIComponent(link.pathname).includes(projectId)) {
           link.scrollIntoView({ block: "center", inline: "nearest" });
           link.click();
           return true;
@@ -107,75 +89,87 @@ async function clickProject(page: Page, project: ProjectRef) {
     { projectId: project.id, name: project.name }
   );
 
-  if (!clicked) {
-    await navigateProject(page, project);
-    return;
-  }
-
+  if (!clicked) throw new Error(`Could not click project ${project.name}`);
   if (CLICK_DELAY_MS > 0) await sleep(CLICK_DELAY_MS);
 }
 
-async function waitForProjectIssues(page: Page, projectId: string, timeoutMs: number) {
-  const fragment = `/projects/${encodeURIComponent(projectId)}/issues`;
+async function waitForProjectReady(page: Page, projectId: string, timeoutMs: number) {
   await page.waitForFunction(
-    (pathFragment) => window.location.pathname.includes(pathFragment),
-    { timeout: timeoutMs, polling: 50 },
-    fragment
+    (id) => decodeURIComponent(window.location.pathname).includes(id),
+    { timeout: timeoutMs, polling: 16 },
+    projectId
   );
 
-  await page.waitForFunction(
-    () => {
-      const loading = document.querySelector('[class*="layout-loader"], [class*="ListLayoutLoader"]');
-      return !loading;
-    },
-    { timeout: timeoutMs, polling: 150 }
-  );
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = await page.evaluate(() => {
+      const loading = !!document.querySelector('[class*="layout-loader"], [class*="ListLayoutLoader"]');
+      const headerMatch = document.body.innerText.match(/Work Items\n(\d+)/);
+      const headerCount = headerMatch ? Number(headerMatch[1]) : 0;
+      const issueBlocks = document.querySelectorAll('[id^="issue-"]').length;
+      return { loading, headerCount, issueBlocks };
+    });
 
-  await sleep(500);
-}
+    if (state.loading) {
+      await sleep(150);
+      continue;
+    }
 
-async function readCounts(page: Page) {
-  return page.evaluate(() => {
-    const headerMatch = document.body.innerText.match(/Work Items\n(\d+)/);
-    const headerCount = headerMatch ? Number(headerMatch[1]) : 0;
-    const issueBlocks = document.querySelectorAll('[id^="issue-"]').length;
-    return { issueBlocks, headerCount };
-  });
+    if (state.headerCount === 0 && state.issueBlocks === 0) {
+      await sleep(150);
+      continue;
+    }
+
+    if (state.headerCount > 0 && state.issueBlocks === 0) {
+      await sleep(150);
+      continue;
+    }
+
+    return state;
+  }
+
+  throw new Error(`Project ${projectId} did not become ready in ${timeoutMs}ms`);
 }
 
 async function assertProjectView(page: Page, label: string) {
-  const deadline = Date.now() + 5000;
-  let last = { issueBlocks: 0, headerCount: 0 };
+  const state = await page.evaluate(() => {
+    const headerMatch = document.body.innerText.match(/Work Items\n(\d+)/);
+    const headerCount = headerMatch ? Number(headerMatch[1]) : 0;
+    const issueBlocks = document.querySelectorAll('[id^="issue-"]').length;
+    return { headerCount, issueBlocks };
+  });
 
-  while (Date.now() < deadline) {
-    last = await readCounts(page);
-    if (last.headerCount === 0 || last.issueBlocks > 0) break;
-    await sleep(200);
-  }
-
-  if (last.headerCount > 0 && last.issueBlocks === 0) {
-    throw new Error(`${label}: header shows ${last.headerCount} work items but list rendered 0 issue rows`);
+  if (state.headerCount > 0 && state.issueBlocks === 0) {
+    throw new Error(`${label}: header=${state.headerCount} but list rendered 0 issue rows`);
   }
 }
 
 async function runRound(page: Page, projectA: ProjectRef, projectB: ProjectRef, round: number, workerId: number) {
   await clickProject(page, projectA);
-  await waitForProjectIssues(page, projectA.id, 90_000);
+  await waitForProjectReady(page, projectA.id, 90_000);
   await assertProjectView(page, `w${workerId} r${round} project A`);
 
   await clickProject(page, projectB);
-  await waitForProjectIssues(page, projectB.id, 90_000);
+  await waitForProjectReady(page, projectB.id, 90_000);
   await assertProjectView(page, `w${workerId} r${round} project B`);
 
   await clickProject(page, projectA);
-  await waitForProjectIssues(page, projectA.id, 90_000);
+  await waitForProjectReady(page, projectA.id, 90_000);
   await assertProjectView(page, `w${workerId} r${round} back to A`);
+}
+
+async function bootProject(page: Page, project: ProjectRef) {
+  await page.goto(`${WEB_URL}/${WORKSPACE_SLUG}/projects/${encodeURIComponent(project.id)}/issues`, {
+    waitUntil: "networkidle2",
+    timeout: 120_000,
+  });
+  await waitForProjectReady(page, project.id, 90_000);
 }
 
 async function worker(browser: Browser, workerId: number, projectA: ProjectRef, projectB: ProjectRef) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1440, height: 900 });
-  await navigateProject(page, projectB);
+  await bootProject(page, projectB);
 
   let passed = 0;
   const failures: string[] = [];
@@ -188,7 +182,7 @@ async function worker(browser: Browser, workerId: number, projectA: ProjectRef, 
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         failures.push(`round ${round}: ${message}`);
-        await navigateProject(page, projectB).catch(() => undefined);
+        await bootProject(page, projectB).catch(() => undefined);
       }
     }
   } finally {

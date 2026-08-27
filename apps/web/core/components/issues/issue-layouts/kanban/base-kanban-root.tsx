@@ -110,7 +110,7 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
       { canGroup: !isLinearProject, perPageCount: isLinearProject ? 100 : sub_group_by ? 10 : 30 },
       viewId
     );
-  }, [fetchIssues, storeType, group_by, sub_group_by, viewId, routeProjectId, isLinearProject, issues]);
+  }, [fetchIssues, storeType, group_by, sub_group_by, viewId, routeProjectId, isLinearProject]);
 
   const groupedIssueIds = useMemo(() => {
     const raw = issues?.groupedIssueIds;

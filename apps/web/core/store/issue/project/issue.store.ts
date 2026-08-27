@@ -274,6 +274,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
         if (this.normalizeLinearGroupedIssues(projectId)) {
           this.loadedProjectId = projectId;
         } else {
+          this.clear(true);
           this.loadedProjectId = null;
           this.setLoader(loadType);
         }

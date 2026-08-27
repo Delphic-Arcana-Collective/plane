@@ -119,7 +119,6 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
     workspaceSlugStr,
     routeProjectId,
     isLinearProject,
-    issues,
   ]);
 
   const groupedIssueIds = useMemo(() => {
