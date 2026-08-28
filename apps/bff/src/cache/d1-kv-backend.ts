@@ -1,4 +1,4 @@
-import type { TIssue } from "@plane/types";
+import type { TIssue, TIssueComment } from "@plane/types";
 import type { Env } from "../env.js";
 import type { LinearSyncSnapshot } from "../linear/client.js";
 import { filterIssues } from "../mapper/index.js";
@@ -144,6 +144,17 @@ export class D1KvCacheBackend extends MemoryCacheBackend implements KvCacheBacke
 
   async deletePlaneIssue(issueId: string): Promise<boolean> {
     const deleted = await this.repo.deletePlaneIssue(issueId);
+    if (deleted) await this.invalidateSnapshotCache();
+    return deleted;
+  }
+
+  async upsertPlaneComment(comment: TIssueComment, issueExternalId: string): Promise<void> {
+    await this.repo.upsertPlaneComment(comment, issueExternalId);
+    await this.invalidateSnapshotCache();
+  }
+
+  async deletePlaneComment(commentId: string): Promise<boolean> {
+    const deleted = await this.repo.deletePlaneComment(commentId);
     if (deleted) await this.invalidateSnapshotCache();
     return deleted;
   }

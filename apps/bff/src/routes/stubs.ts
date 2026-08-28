@@ -160,7 +160,21 @@ export function createStubRoutes() {
   app.get("/api/workspaces/:slug/projects/:projectId/modules/", (c) => c.json([]));
   app.get("/api/workspaces/:slug/projects/:projectId/views/", (c) => c.json([]));
   app.get("/api/workspaces/:slug/projects/:projectId/estimates/", (c) => c.json([]));
-  app.get("/api/workspaces/:slug/projects/:projectId/intake-state/", (c) => c.json(null));
+  app.get("/api/workspaces/:slug/projects/:projectId/intake-state/", (c) => {
+    const projectId = c.req.param("projectId");
+    const bootstrap = createBootstrapContext(c.get("env"));
+    return c.json({
+      id: `intake-state-${projectId}`,
+      color: "#6B7280",
+      default: true,
+      description: "",
+      group: "triage",
+      name: "Triage",
+      project_id: projectId,
+      sequence: 0,
+      workspace_id: bootstrap.workspace.id,
+    });
+  });
 
   app.get("/api/workspaces/:slug/projects/:projectId/issues/:issueId/history/", async (c) => {
     const blocked = workspaceGuard(c, c.req.param("slug"));

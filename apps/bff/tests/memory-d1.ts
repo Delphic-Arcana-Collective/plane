@@ -272,6 +272,22 @@ class MemoryPreparedStatement implements D1PreparedStatement {
         ._rows("issues")
         .filter((row) => row.workspace_id === this.binds[0] && row.external_id === this.binds[1])
         .map(cloneRow);
+    } else if (sql.startsWith("select source, tag from comments")) {
+      results = this.db
+        ._rows("comments")
+        .filter((row) => row.workspace_id === this.binds[0] && row.external_id === this.binds[1])
+        .map(cloneRow);
+    } else if (sql.startsWith("select 1 as ok from comments")) {
+      results = this.db
+        ._rows("comments")
+        .filter(
+          (row) =>
+            row.workspace_id === this.binds[0] &&
+            row.external_id === this.binds[1] &&
+            (row.source === this.binds[2] || row.tag === this.binds[3])
+        )
+        .slice(0, 1)
+        .map(() => ({ ok: 1 }));
     } else if (sql.startsWith("select * from projects")) {
       results = this.db
         ._rows("projects")

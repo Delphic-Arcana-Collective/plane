@@ -14,7 +14,11 @@ import { useParams } from "next/navigation";
 import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import type { EIssuesStoreType, GroupByColumnTypes, TGroupedIssues } from "@plane/types";
 import { EIssueServiceType, EIssueLayoutTypes } from "@plane/types";
-import { decodeRouteProjectId, isLinearReadOnly, resolveLinearGroupedIssueIds } from "@/helpers/linear-display.helper";
+import {
+  decodeRouteProjectId,
+  isLinearDisplayMode,
+  resolveLinearGroupedIssueIds,
+} from "@/helpers/linear-display.helper";
 //hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
@@ -101,7 +105,7 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
   const group_by = displayFilters?.group_by;
 
   const orderBy = displayFilters?.order_by;
-  const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly();
+  const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearDisplayMode();
   const linearLoadedProjectId = isLinearProject && "loadedProjectId" in issues ? issues.loadedProjectId : null;
   const linearHydratedProjectId =
     isLinearProject && "linearHydratedProjectId" in issues ? issues.linearHydratedProjectId : null;

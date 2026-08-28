@@ -23,16 +23,40 @@ export function isLinearDisplayMode(): boolean {
   return import.meta.env.VITE_LINEAR_DISPLAY_MODE === "true";
 }
 
-/** Read-only Linear viewer — no create/edit/write actions in the UI. */
+/**
+ * @deprecated Use `isLinearDisplayMode()` for nav/readiness and
+ * `isLinearProtectedIssue` / `isLinearProtectedComment` for write gates.
+ * Kept as a display-mode alias so accidental call sites stay display-only.
+ */
 export function isLinearReadOnly(): boolean {
   return isLinearDisplayMode();
 }
 
-export const LINEAR_READ_ONLY_VIEW_FLAGS = {
-  enableQuickAdd: false,
-  enableIssueCreation: false,
-  enableInlineEditing: false,
-} as const;
+type LinearSourceMeta = {
+  tag?: string | null;
+  system_tag?: string | null;
+  source?: string | null;
+  external_source?: string | null;
+};
+
+/** True when the issue is Linear-synced and must not be mutated via Plane writes. */
+export function isLinearProtectedIssue(issue: (Partial<TIssue> & LinearSourceMeta) | null | undefined): boolean {
+  if (!issue) return false;
+  return issue.tag === "Linear" || issue.system_tag === "Linear" || issue.source === "linear";
+}
+
+/** True when the comment is Linear-synced and must not be mutated via Plane writes. */
+export function isLinearProtectedComment(
+  comment: (Partial<TIssueComment> & LinearSourceMeta) | null | undefined
+): boolean {
+  if (!comment) return false;
+  return (
+    comment.external_source === "linear" ||
+    comment.tag === "Linear" ||
+    comment.system_tag === "Linear" ||
+    comment.source === "linear"
+  );
+}
 
 export function getLinearWorkspaceSlug(): string {
   return import.meta.env.VITE_LINEAR_WORKSPACE_SLUG || "delphic";

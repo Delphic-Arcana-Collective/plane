@@ -228,7 +228,7 @@ const ROUTES: RouteCase[] = [
   {
     name: "project-intake-state",
     path: `/api/workspaces/${slug}/projects/${projectId}/intake-state/`,
-    assert: (body) => expect(body).toBeNull(),
+    assert: (body) => expect(body).toMatchObject({ id: expect.any(String), group: "triage" }),
   },
   {
     name: "issue-history",

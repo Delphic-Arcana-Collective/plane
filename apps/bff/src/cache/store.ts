@@ -133,6 +133,10 @@ export class MemoryCacheBackend implements CacheBackend {
     return comments.filter((comment) => comment.created_at > createdAfter);
   }
 
+  getIssueComment(issueId: string, commentId: string): TIssueComment | undefined {
+    return this.inner.commentsByIssue.get(issueId)?.find((comment) => comment.id === commentId);
+  }
+
   findIssueByIdentifier(identifier: string): { issue: TIssue; projectId: string } | undefined {
     const match = identifier.match(/^([A-Z]+)-(\d+)$/);
     if (!match) return undefined;

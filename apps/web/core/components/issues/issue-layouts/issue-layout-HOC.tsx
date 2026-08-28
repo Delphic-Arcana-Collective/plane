@@ -18,7 +18,7 @@ import { SpreadsheetLayoutLoader } from "@/components/ui/loader/layouts/spreadsh
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
 import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
-import { decodeRouteProjectId, isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { decodeRouteProjectId, isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // local imports
 import { IssueLayoutEmptyState } from "./empty-states";
 
@@ -54,7 +54,7 @@ export const IssueLayoutHOC = observer(function IssueLayoutHOC(props: Props) {
   const { issues } = useIssues(storeType);
 
   const isLinearProject =
-    storeType === EIssuesStoreType.PROJECT && isLinearReadOnly() && "isProjectViewReady" in issues;
+    storeType === EIssuesStoreType.PROJECT && isLinearDisplayMode() && "isProjectViewReady" in issues;
 
   if (isLinearProject) {
     if (!routeProjectId || !issues.isProjectViewReady(routeProjectId)) {

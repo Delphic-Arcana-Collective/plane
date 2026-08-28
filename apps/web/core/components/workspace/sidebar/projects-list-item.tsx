@@ -27,7 +27,7 @@ import { IconButton } from "@plane/propel/icon-button";
 import { Tooltip } from "@plane/propel/tooltip";
 import { CustomMenu, DropIndicator, DragHandle, ControlLink } from "@plane/ui";
 import { cn } from "@plane/utils";
-import { isLinearDisplayMode, isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // components
 import { DEFAULT_TAB_KEY, getTabUrl } from "@/components/navigation/tab-navigation-utils";
 import { useTabPreferences } from "@/components/navigation/use-tab-preferences";
@@ -388,7 +388,7 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
               )}
               <div className="flex items-center gap-1">
                 {/* TODO(linear-display): Re-enable project quick actions (publish, copy link, settings, etc.) when write support is added. */}
-                {!isLinearReadOnly() && (
+                {!isLinearDisplayMode() && (
                   <CustomMenu
                     customButton={
                       <IconButton

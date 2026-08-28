@@ -29,8 +29,7 @@ import type { IProjectIssuesFilter } from "./filter.store";
 import {
   groupLinearIssuesFromFlatList,
   hasLinearGroupedIssueData,
-  isLinearReadOnly,
-  LINEAR_READ_ONLY_VIEW_FLAGS,
+  isLinearDisplayMode,
   syncLinearGroupedIssueCounts,
 } from "@/helpers/linear-display.helper";
 
@@ -79,7 +78,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   linearHydratedProjectId: string | null = null;
 
   isProjectViewReady = (projectId: string): boolean => {
-    if (!isLinearReadOnly()) return true;
+    if (!isLinearDisplayMode()) return true;
     if (this.loadedProjectId !== projectId || !this.groupedIssueIds) return false;
     if (!this.groupedIssuesMatchProject(projectId)) return false;
 
@@ -116,7 +115,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   };
 
   ensureLinearProjectIssuesGrouped = (projectId: string): boolean => {
-    if (!isLinearReadOnly()) return true;
+    if (!isLinearDisplayMode()) return true;
     // Hydrated payload may exist before render-ready (waiting on states/columns).
     if (this.linearHydratedProjectId !== projectId || !this.groupedIssueIds) return false;
     const ok = this.normalizeLinearGroupedIssues(projectId);
@@ -205,10 +204,6 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   }
 
   get viewFlags(): ViewFlags {
-    if (isLinearReadOnly()) {
-      return LINEAR_READ_ONLY_VIEW_FLAGS;
-    }
-
     return {
       enableQuickAdd: true,
       enableIssueCreation: true,
@@ -263,7 +258,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     options: IssuePaginationOptions,
     isExistingPaginationOptions: boolean = false
   ) => {
-    if (isLinearReadOnly()) {
+    if (isLinearDisplayMode()) {
       return this.fetchLinearProjectIssues(workspaceSlug, projectId, loadType, options, isExistingPaginationOptions);
     }
 

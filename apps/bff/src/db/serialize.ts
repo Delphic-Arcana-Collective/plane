@@ -294,10 +294,13 @@ export function rowsToPlaneCache(
   const issuesByProject = new Map<string, TIssue[]>();
   const issuesByName = new Map<string, TIssue[]>();
   for (const row of issueRows) {
-    const issue = parseJson<TIssue>(row.payload);
-    // Plane writes may omit timestamps; list UI historically keyed off created_at.
-    if (!issue.created_at) issue.created_at = row.updated_at || "2026-01-01T00:00:00.000Z";
-    if (!issue.updated_at) issue.updated_at = row.updated_at || issue.created_at;
+    let issue = parseJson<TIssue>(row.payload);
+    const projectStates = statesByProject.get(issue.project_id ?? "") ?? [];
+    const defaultStateId = pickDefaultStateId(projectStates);
+    issue = normalizePlaneIssue(issue, {
+      defaultStateId,
+      fallbackTimestamp: row.updated_at || "2026-01-01T00:00:00.000Z",
+    });
     const list = issuesByName.get(row.project_name) ?? [];
     if (!list.some((i) => i.id === issue.id)) list.push(issue);
     issuesByName.set(row.project_name, list);
@@ -358,8 +361,49 @@ export function snapshotToLinearRows(snapshot: LinearSyncSnapshot, env: Env, wor
   return planeCacheToRows(cache, workspaceId, DATA_SOURCE_LINEAR);
 }
 
+/** Prefer backlog → unstarted → first project state for Plane issues missing state_id. */
+export function pickDefaultStateId(states: IState[]): string | null {
+  const preferred =
+    states.find((state) => state.group === "backlog") ??
+    states.find((state) => state.group === "unstarted") ??
+    states[0];
+  return preferred?.id ?? null;
+}
+
+/**
+ * Ensure Plane issue payloads have list/detail UI fields after D1 round-trip.
+ * `state_id` may stay null when no project states exist.
+ */
+export function normalizePlaneIssue(
+  issue: TIssue,
+  options?: { defaultStateId?: string | null; defaultSequenceId?: number; fallbackTimestamp?: string }
+): TIssue {
+  const fallback = options?.fallbackTimestamp ?? nowIso();
+  const stateId =
+    issue.state_id !== undefined && issue.state_id !== null && issue.state_id !== ""
+      ? issue.state_id
+      : (options?.defaultStateId ?? null);
+  const sequenceId =
+    typeof issue.sequence_id === "number" && Number.isFinite(issue.sequence_id)
+      ? issue.sequence_id
+      : (options?.defaultSequenceId ?? 0);
+
+  return {
+    ...issue,
+    state_id: stateId,
+    sequence_id: sequenceId,
+    assignee_ids: Array.isArray(issue.assignee_ids) ? issue.assignee_ids : [],
+    label_ids: Array.isArray(issue.label_ids) ? issue.label_ids : [],
+    priority: issue.priority ?? "none",
+    description_html: issue.description_html ?? "<p></p>",
+    created_at: issue.created_at ?? fallback,
+    updated_at: issue.updated_at ?? fallback,
+  };
+}
+
 export function planeIssueToRow(issue: TIssue, workspaceId: string, projectName: string): IssueRow {
   const source = DATA_SOURCE_PLANE;
+  const normalized = normalizePlaneIssue(issue);
   return {
     id: rowId(source, issue.id),
     workspace_id: workspaceId,
@@ -368,7 +412,21 @@ export function planeIssueToRow(issue: TIssue, workspaceId: string, projectName:
     source,
     external_id: issue.id,
     tag: TAG_PLANE,
-    payload: serializePayload(issue, DATA_SOURCE_PLANE),
+    payload: serializePayload(normalized, DATA_SOURCE_PLANE),
+    updated_at: nowIso(),
+  };
+}
+
+export function planeCommentToRow(comment: TIssueComment, workspaceId: string, issueExternalId: string): CommentRow {
+  const source = DATA_SOURCE_PLANE;
+  return {
+    id: rowId(source, comment.id),
+    workspace_id: workspaceId,
+    issue_id: rowId(source, issueExternalId),
+    source,
+    external_id: comment.id,
+    tag: TAG_PLANE,
+    payload: serializePayload(comment, DATA_SOURCE_PLANE),
     updated_at: nowIso(),
   };
 }

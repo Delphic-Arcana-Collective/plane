@@ -18,7 +18,11 @@ import {
   type TGroupedIssues,
   type TIssueKanbanFilters,
 } from "@plane/types";
-import { decodeRouteProjectId, isLinearReadOnly, resolveLinearGroupedIssueIds } from "@/helpers/linear-display.helper";
+import {
+  decodeRouteProjectId,
+  isLinearDisplayMode,
+  resolveLinearGroupedIssueIds,
+} from "@/helpers/linear-display.helper";
 // constants
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
@@ -100,7 +104,7 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
   const collapsedGroups =
     issueFiltersForView?.kanbanFilters || ({ group_by: [], sub_group_by: [] } as TIssueKanbanFilters);
 
-  const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearReadOnly();
+  const isLinearProject = storeType === EIssuesStoreType.PROJECT && isLinearDisplayMode();
   const linearLoadedProjectId = isLinearProject && "loadedProjectId" in issues ? issues.loadedProjectId : null;
   const linearHydratedProjectId =
     isLinearProject && "linearHydratedProjectId" in issues ? issues.linearHydratedProjectId : null;

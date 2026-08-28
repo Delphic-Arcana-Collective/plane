@@ -23,7 +23,7 @@ import { ListLoaderItemRow } from "@/components/ui/loader/layouts/list-layout-lo
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import type { TSelectionHelper } from "@/hooks/use-multiple-select";
 import { usePlatformOS } from "@/hooks/use-platform-os";
-import { isLinearReadOnly } from "@/helpers/linear-display.helper";
+import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // types
 import { HIGHLIGHT_CLASS, getIssueBlockId, isIssueNew } from "../utils";
 import { IssueBlock } from "./block";
@@ -134,7 +134,7 @@ export const IssueBlockRoot = observer(function IssueBlockRoot(props: Props) {
   const subIssues = subIssuesStore.subIssuesByIssueId(issueId);
   // Linear read-only: paint issue-* rows immediately. RenderIfVisible would otherwise leave
   // headerCount>0 with zero [id^=issue-] nodes until IntersectionObserver fires (forbidden).
-  const forceVisible = shouldRenderByDefault || isLinearReadOnly();
+  const forceVisible = shouldRenderByDefault || isLinearDisplayMode();
   return (
     <div className="relative" ref={issueBlockRef} id={getIssueBlockId(issueId, groupId)}>
       <DropIndicator classNames={"absolute top-0 z-[2]"} isVisible={instruction === "DRAG_OVER"} />

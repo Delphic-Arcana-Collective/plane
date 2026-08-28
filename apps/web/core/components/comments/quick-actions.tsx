@@ -18,6 +18,7 @@ import { CustomMenu } from "@plane/ui";
 import { cn } from "@plane/utils";
 // hooks
 import { useUser } from "@/hooks/store/user";
+import { isLinearProtectedComment } from "@/helpers/linear-display.helper";
 
 type TCommentCard = {
   activityOperations: TCommentsOperations;
@@ -33,8 +34,9 @@ export const CommentQuickActions = observer(function CommentQuickActions(props: 
   const { data: currentUser } = useUser();
   // derived values
   const isAuthor = currentUser?.id === comment.actor;
-  const canEdit = isAuthor;
-  const canDelete = isAuthor;
+  const isLinearProtected = isLinearProtectedComment(comment);
+  const canEdit = isAuthor && !isLinearProtected;
+  const canDelete = isAuthor && !isLinearProtected;
   // translation
   const { t } = useTranslation();
 
@@ -69,7 +71,7 @@ export const CommentQuickActions = observer(function CommentQuickActions(props: 
               ? t("issue.comments.switch.public")
               : t("issue.comments.switch.private"),
           icon: comment.access === EIssueCommentAccessSpecifier.INTERNAL ? GlobeIcon : LockIcon,
-          shouldRender: showAccessSpecifier,
+          shouldRender: showAccessSpecifier && !isLinearProtected,
         },
         {
           key: "delete",
@@ -80,7 +82,17 @@ export const CommentQuickActions = observer(function CommentQuickActions(props: 
         },
       ].filter((item) => item.shouldRender !== false);
     },
-    [t, setEditMode, canEdit, showCopyLinkOption, activityOperations, comment, showAccessSpecifier, canDelete]
+    [
+      t,
+      setEditMode,
+      canEdit,
+      showCopyLinkOption,
+      activityOperations,
+      comment,
+      showAccessSpecifier,
+      canDelete,
+      isLinearProtected,
+    ]
   );
 
   if (MENU_ITEMS.length === 0) return null;
