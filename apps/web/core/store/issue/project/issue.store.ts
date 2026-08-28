@@ -236,7 +236,6 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       loadedProjectId: observable,
       linearHydratedProjectId: observable,
       ensureLinearProjectIssuesGrouped: action,
-      clear: action.bound,
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,
@@ -246,16 +245,6 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     // filter store
     this.issueFilterStore = issueFilterStore;
     this.router = _rootStore.rootStore.router;
-  }
-
-  /** Plane clears grouped ids on layout change; reset Linear skip flags so Plane fetch runs again. */
-  override clear(shouldClearPaginationOptions = true) {
-    super.clear(shouldClearPaginationOptions);
-    if (!isLinearDisplayMode()) return;
-    runInAction(() => {
-      this.loadedProjectId = null;
-      this.linearHydratedProjectId = null;
-    });
   }
 
   /**
@@ -328,7 +317,11 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
     runInAction(() => {
       this.setLoader(loadType);
-      if (this.linearHydratedProjectId !== projectId) {
+      // Plane clear() drops grouped buckets on layout change; reset Linear skip flags.
+      if (!this.groupedIssueIds) {
+        this.loadedProjectId = null;
+        this.linearHydratedProjectId = null;
+      } else if (this.linearHydratedProjectId !== projectId) {
         this.linearHydratedProjectId = null;
         this.loadedProjectId = null;
       }
