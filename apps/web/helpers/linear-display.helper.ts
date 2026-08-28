@@ -216,6 +216,11 @@ export function hasLinearGroupedIssueData(
   const flatIds = groupedIssueIds[ALL_ISSUES];
   if (Array.isArray(flatIds) && flatIds.length === 0) return true;
 
+  if (layout === EIssueLayoutTypes.CALENDAR) {
+    if (Array.isArray(flatIds) && flatIds.length > 0) return true;
+    return hasNonEmptyGroupBuckets(groupedIssueIds);
+  }
+
   if ((layout === EIssueLayoutTypes.KANBAN || layout === EIssueLayoutTypes.LIST) && groupBy) {
     if (!hasNonEmptyGroupBuckets(groupedIssueIds)) return false;
     if (!columnIds) return true;

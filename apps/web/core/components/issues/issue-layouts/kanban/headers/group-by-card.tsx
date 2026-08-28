@@ -50,7 +50,7 @@ export const HeaderGroupByCard = observer(function HeaderGroupByCard(props: IHea
     addIssuesToView,
     isEpic = false,
   } = props;
-  const verticalAlignPosition = sub_group_by ? false : collapsedGroups?.group_by.includes(column_id);
+  const verticalAlignPosition = sub_group_by ? false : (collapsedGroups?.group_by?.includes(column_id) ?? false);
   // states
   const [isOpen, setIsOpen] = React.useState(false);
   const [openExistingIssueListModal, setOpenExistingIssueListModal] = React.useState(false);

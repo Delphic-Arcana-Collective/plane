@@ -112,10 +112,10 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
 
   useEffect(() => {
     if (storeType === EIssuesStoreType.PROJECT && !routeProjectId) return;
-    if (isLinearProject && routeProjectId && linearLoadedProjectId === routeProjectId) {
+    if (isLinearProject && routeProjectId && linearLoadedProjectId === routeProjectId && issues.groupedIssueIds) {
       return;
     }
-    if (isLinearProject && routeProjectId && linearHydratedProjectId === routeProjectId) {
+    if (isLinearProject && routeProjectId && linearHydratedProjectId === routeProjectId && issues.groupedIssueIds) {
       if ("ensureLinearProjectIssuesGrouped" in issues) {
         issues.ensureLinearProjectIssuesGrouped(routeProjectId);
       }
@@ -272,15 +272,18 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
         } else {
           collapsedGroups.push(value);
         }
-        updateFilters(projectId?.toString() ?? "", EIssueFilterType.KANBAN_FILTERS, {
+        updateFilters(routeProjectId ?? "", EIssueFilterType.KANBAN_FILTERS, {
           [toggle]: collapsedGroups,
         });
       }
     },
-    [workspaceSlug, issuesFilter, updateFilters]
+    [workspaceSlug, issuesFilter, updateFilters, routeProjectId]
   );
 
-  const collapsedGroups = issuesFilter?.issueFilters?.kanbanFilters || { group_by: [], sub_group_by: [] };
+  const collapsedGroups = {
+    group_by: issuesFilter?.issueFilters?.kanbanFilters?.group_by ?? [],
+    sub_group_by: issuesFilter?.issueFilters?.kanbanFilters?.sub_group_by ?? [],
+  };
 
   return (
     <>

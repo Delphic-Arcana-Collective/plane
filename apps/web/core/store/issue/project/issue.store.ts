@@ -84,6 +84,17 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
 
     const filters = this.issueFilterStore.getIssueFilters(projectId);
     const layout = filters?.displayFilters?.layout ?? EIssueLayoutTypes.LIST;
+
+    // Calendar uses date buckets from Plane's fetch — do not gate on list/kanban state columns.
+    if (layout === EIssueLayoutTypes.CALENDAR) {
+      const flatIds = this.groupedIssueIds[ALL_ISSUES];
+      if (Array.isArray(flatIds) && flatIds.length > 0) {
+        const getIssueById = this.rootIssueStore.issues.getIssueById;
+        if (!flatIds.every((issueId) => !!getIssueById(issueId)?.id)) return false;
+      }
+      return hasLinearGroupedIssueData(this.groupedIssueIds as TGroupedIssues, layout, null, undefined);
+    }
+
     const groupBy = (filters?.displayFilters?.group_by ?? null) as GroupByColumnTypes | null;
 
     let columnIds: ReadonlySet<string> | undefined;
@@ -111,7 +122,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       if (!checkIds.every((issueId) => !!getIssueById(issueId)?.id)) return false;
     }
 
-    return hasLinearGroupedIssueData(this.groupedIssueIds, layout, groupBy, columnIds);
+    return hasLinearGroupedIssueData(this.groupedIssueIds as TGroupedIssues, layout, groupBy, columnIds);
   };
 
   ensureLinearProjectIssuesGrouped = (projectId: string): boolean => {
@@ -164,7 +175,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   }
 
   private normalizeLinearGroupedIssues(projectId: string) {
-    const groupedIssueIds = this.groupedIssueIds;
+    const groupedIssueIds = this.groupedIssueIds as TGroupedIssues | undefined;
     if (!groupedIssueIds) return false;
 
     const getIssueById = this.rootIssueStore.issues.getIssueById;
@@ -183,8 +194,15 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     }
 
     const filters = this.issueFilterStore.getIssueFilters(projectId);
-    const groupBy = (filters?.displayFilters?.group_by ?? null) as GroupByColumnTypes | null;
     const layout = filters?.displayFilters?.layout ?? EIssueLayoutTypes.LIST;
+
+    // Keep Plane/BFF date buckets; list/kanban client regroup does not apply to calendar.
+    if (layout === EIssueLayoutTypes.CALENDAR) {
+      this.applyLinearGroupedIssueCounts(groupedIssueIds as TGroupedIssues);
+      return hasLinearGroupedIssueData(groupedIssueIds as TGroupedIssues, layout, null, undefined);
+    }
+
+    const groupBy = (filters?.displayFilters?.group_by ?? null) as GroupByColumnTypes | null;
 
     if (groupBy && Array.isArray(flatIds) && flatIds.length > 0) {
       const issueMap = Object.fromEntries(
@@ -197,10 +215,10 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       this.groupedIssueIds = groupLinearIssuesFromFlatList(groupedIssueIds, issueMap, groupBy);
     }
 
-    this.applyLinearGroupedIssueCounts(this.groupedIssueIds);
+    this.applyLinearGroupedIssueCounts(this.groupedIssueIds as TGroupedIssues);
     // Column/state availability is gated in isProjectViewReady — normalize must not fail
     // merely because states have not arrived yet (that blocked ensureLinear forever).
-    return hasLinearGroupedIssueData(this.groupedIssueIds, layout, groupBy);
+    return hasLinearGroupedIssueData(this.groupedIssueIds as TGroupedIssues, layout, groupBy);
   }
 
   get viewFlags(): ViewFlags {
@@ -218,6 +236,7 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       loadedProjectId: observable,
       linearHydratedProjectId: observable,
       ensureLinearProjectIssuesGrouped: action,
+      clear: action.bound,
       fetchIssues: action,
       fetchNextIssues: action,
       fetchIssuesWithExistingPagination: action,
@@ -227,6 +246,16 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
     // filter store
     this.issueFilterStore = issueFilterStore;
     this.router = _rootStore.rootStore.router;
+  }
+
+  /** Plane clears grouped ids on layout change; reset Linear skip flags so Plane fetch runs again. */
+  override clear(shouldClearPaginationOptions = true) {
+    super.clear(shouldClearPaginationOptions);
+    if (!isLinearDisplayMode()) return;
+    runInAction(() => {
+      this.loadedProjectId = null;
+      this.linearHydratedProjectId = null;
+    });
   }
 
   /**

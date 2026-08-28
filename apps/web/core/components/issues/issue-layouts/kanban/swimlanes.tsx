@@ -169,7 +169,7 @@ const SubGroupSwimlane = observer(function SubGroupSwimlane(props: ISubGroupSwim
       if (subGroupCount > 0) subGroupVisibility.showGroup = true;
       else subGroupVisibility.showGroup = false;
     }
-    if (collapsedGroups?.sub_group_by.includes(_list.id)) subGroupVisibility.showIssues = false;
+    if (collapsedGroups?.sub_group_by?.includes(_list.id)) subGroupVisibility.showIssues = false;
     return subGroupVisibility;
   };
 

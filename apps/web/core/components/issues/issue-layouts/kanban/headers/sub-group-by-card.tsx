@@ -30,7 +30,7 @@ export const HeaderSubGroupByCard = observer(function HeaderSubGroupByCard(props
       onClick={() => handleCollapsedGroups("sub_group_by", column_id)}
     >
       <div className="flex h-[20px] w-[20px] flex-shrink-0 items-center justify-center overflow-hidden rounded-xs transition-all hover:bg-layer-1">
-        {collapsedGroups?.sub_group_by.includes(column_id) ? (
+        {collapsedGroups?.sub_group_by?.includes(column_id) ? (
           <ChevronDownIcon width={14} strokeWidth={2} />
         ) : (
           <ChevronUpIcon width={14} strokeWidth={2} />

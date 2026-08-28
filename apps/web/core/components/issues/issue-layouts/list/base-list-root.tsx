@@ -111,10 +111,10 @@ export const BaseListRoot = observer(function BaseListRoot(props: IBaseListRoot)
 
   useEffect(() => {
     if (!displayFilters || !workspaceSlugStr || !routeProjectId) return;
-    if (isLinearProject && linearLoadedProjectId === routeProjectId) {
+    if (isLinearProject && linearLoadedProjectId === routeProjectId && issues.groupedIssueIds) {
       return;
     }
-    if (isLinearProject && linearHydratedProjectId === routeProjectId) {
+    if (isLinearProject && linearHydratedProjectId === routeProjectId && issues.groupedIssueIds) {
       // Payload committed; re-normalize when states/columns catch up — do not refetch.
       if ("ensureLinearProjectIssuesGrouped" in issues) {
         issues.ensureLinearProjectIssuesGrouped(routeProjectId);

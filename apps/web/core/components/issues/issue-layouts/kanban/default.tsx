@@ -143,7 +143,7 @@ export const KanBan = observer(function KanBan(props: IKanBan) {
       if (!showEmptyGroup) {
         groupVisibility.showGroup = effectiveCount > 0;
       }
-      if (collapsedGroups?.group_by.includes(_list.id)) groupVisibility.showIssues = false;
+      if (collapsedGroups?.group_by?.includes(_list.id)) groupVisibility.showIssues = false;
       return groupVisibility;
     }
   };
