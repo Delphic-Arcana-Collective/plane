@@ -217,8 +217,7 @@ export function hasLinearGroupedIssueData(
   if (Array.isArray(flatIds) && flatIds.length === 0) return true;
 
   if (layout === EIssueLayoutTypes.CALENDAR) {
-    if (Array.isArray(flatIds) && flatIds.length > 0) return true;
-    return hasNonEmptyGroupBuckets(groupedIssueIds);
+    return true;
   }
 
   if ((layout === EIssueLayoutTypes.KANBAN || layout === EIssueLayoutTypes.LIST) && groupBy) {

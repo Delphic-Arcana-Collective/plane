@@ -80,13 +80,16 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   isProjectViewReady = (projectId: string): boolean => {
     if (!isLinearDisplayMode()) return true;
     if (this.loadedProjectId !== projectId || !this.groupedIssueIds) return false;
-    if (!this.groupedIssuesMatchProject(projectId)) return false;
 
     const filters = this.issueFilterStore.getIssueFilters(projectId);
     const layout = filters?.displayFilters?.layout ?? EIssueLayoutTypes.LIST;
 
-    // Calendar uses date buckets from Plane's fetch — do not gate on list/kanban state columns.
+    // Calendar: empty month is a valid committed state; do not gate on list/kanban columns.
     if (layout === EIssueLayoutTypes.CALENDAR) {
+      const calendarIds = this.collectGroupedIssueIds(this.groupedIssueIds as TGroupedIssues);
+      if (calendarIds.length === 0) return true;
+      if (!this.groupedIssuesMatchProject(projectId)) return false;
+
       const flatIds = this.groupedIssueIds[ALL_ISSUES];
       if (Array.isArray(flatIds) && flatIds.length > 0) {
         const getIssueById = this.rootIssueStore.issues.getIssueById;
@@ -94,6 +97,8 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       }
       return hasLinearGroupedIssueData(this.groupedIssueIds as TGroupedIssues, layout, null, undefined);
     }
+
+    if (!this.groupedIssuesMatchProject(projectId)) return false;
 
     const groupBy = (filters?.displayFilters?.group_by ?? null) as GroupByColumnTypes | null;
 
@@ -175,6 +180,14 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
   }
 
   private normalizeLinearGroupedIssues(projectId: string) {
+    const filters = this.issueFilterStore.getIssueFilters(projectId);
+    const layout = filters?.displayFilters?.layout ?? EIssueLayoutTypes.LIST;
+
+    // Plane's onfetchIssues leaves groupedIssueIds undefined when the month has zero rows.
+    if (!this.groupedIssueIds && layout === EIssueLayoutTypes.CALENDAR) {
+      this.groupedIssueIds = { [ALL_ISSUES]: [] };
+    }
+
     const groupedIssueIds = this.groupedIssueIds as TGroupedIssues | undefined;
     if (!groupedIssueIds) return false;
 
@@ -187,19 +200,16 @@ export class ProjectIssues extends BaseIssuesStore implements IProjectIssues {
       }
     }
 
+    // Keep Plane/BFF date buckets; list/kanban client regroup does not apply to calendar.
+    if (layout === EIssueLayoutTypes.CALENDAR) {
+      this.applyLinearGroupedIssueCounts(groupedIssueIds as TGroupedIssues);
+      return true;
+    }
+
     if (Array.isArray(flatIds) && flatIds.length > 0) {
       if (!flatIds.every((issueId) => getIssueById(issueId)?.project_id === projectId)) {
         return false;
       }
-    }
-
-    const filters = this.issueFilterStore.getIssueFilters(projectId);
-    const layout = filters?.displayFilters?.layout ?? EIssueLayoutTypes.LIST;
-
-    // Keep Plane/BFF date buckets; list/kanban client regroup does not apply to calendar.
-    if (layout === EIssueLayoutTypes.CALENDAR) {
-      this.applyLinearGroupedIssueCounts(groupedIssueIds as TGroupedIssues);
-      return hasLinearGroupedIssueData(groupedIssueIds as TGroupedIssues, layout, null, undefined);
     }
 
     const groupBy = (filters?.displayFilters?.group_by ?? null) as GroupByColumnTypes | null;
