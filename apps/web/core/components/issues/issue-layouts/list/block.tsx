@@ -28,7 +28,9 @@ import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
 import type { TSelectionHelper } from "@/hooks/use-multiple-select";
+import { useLinearMobile } from "@/hooks/use-linear-mobile";
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { IssuePlatformBadge } from "@/components/issues/issue-platform-badge";
 import { calculateIdentifierWidth } from "../utils";
 import type { TRenderQuickActions } from "./list-view-types";
 
@@ -79,6 +81,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
   // hooks
   const { sidebarCollapsed: isSidebarCollapsed } = useAppTheme();
   const { getProjectIdentifierById, currentProjectNextSequenceId } = useProject();
+  const isLinearMobile = useLinearMobile();
   const {
     getIsIssuePeeked,
     peekIssue,
@@ -186,8 +189,10 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
             "last:border-b-transparent": !getIsIssuePeeked(issue.id) && !isIssueActive,
             "bg-accent-primary/5 hover:bg-accent-primary/10": isIssueSelected,
             "bg-layer-1": isCurrentBlockDragging,
-            "md:flex-row md:items-center": isSidebarCollapsed,
-            "lg:flex-row lg:items-center": !isSidebarCollapsed,
+            "md:flex-row md:items-center": isSidebarCollapsed && !isLinearMobile,
+            "lg:flex-row lg:items-center": !isSidebarCollapsed && !isLinearMobile,
+            // Linear Mobile: compact single-row list (Linear app pattern).
+            "!flex-row !items-center !gap-2 !py-2.5": isLinearMobile,
           }
         )}
         onDragStart={() => {
@@ -206,7 +211,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
           <div className="flex flex-grow items-center gap-0.5 truncate">
             <div className="flex items-center gap-1" style={isSubIssue ? { marginLeft } : {}}>
               {/* select checkbox */}
-              {projectId && canSelectIssues && !isEpic && (
+              {projectId && canSelectIssues && !isEpic && !isLinearMobile && (
                 <Tooltip
                   tooltipContent={
                     <>
@@ -270,6 +275,8 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
               )}
             </div>
 
+            {isLinearMobile && <IssuePlatformBadge issue={issue} className="flex-shrink-0 scale-90" />}
+
             <Tooltip
               tooltipContent={issue.name}
               isMobile={isMobile}
@@ -280,7 +287,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
               <p className="cursor-pointer truncate text-body-xs-medium text-primary">{issue.name}</p>
             </Tooltip>
           </div>
-          {!issue?.tempId && (
+          {!issue?.tempId && !isLinearMobile && (
             <div
               className={cn("block rounded-sm border border-strong", {
                 "md:hidden": isSidebarCollapsed,
@@ -294,41 +301,43 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
             </div>
           )}
         </div>
-        <div className="flex flex-shrink-0 items-center gap-2">
-          {!issue?.tempId ? (
-            <>
-              <IssueProperties
-                className={`relative flex flex-wrap ${isSidebarCollapsed ? "md:flex-shrink-0 md:flex-grow" : "lg:flex-shrink-0 lg:flex-grow"} items-center gap-2 whitespace-nowrap`}
-                issue={issue}
-                isReadOnly={!canEditIssueProperties}
-                updateIssue={updateIssue}
-                displayProperties={displayProperties}
-                activeLayout="List"
-                isEpic={isEpic}
-              />
-              {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
-              <div
-                className={cn("hidden", {
-                  "md:flex": isSidebarCollapsed,
-                  "lg:flex": !isSidebarCollapsed,
-                })}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-              >
-                {quickActions({
-                  issue,
-                  parentRef: issueRef,
-                })}
+        {!isLinearMobile && (
+          <div className="flex flex-shrink-0 items-center gap-2">
+            {!issue?.tempId ? (
+              <>
+                <IssueProperties
+                  className={`relative flex flex-wrap ${isSidebarCollapsed ? "md:flex-shrink-0 md:flex-grow" : "lg:flex-shrink-0 lg:flex-grow"} items-center gap-2 whitespace-nowrap`}
+                  issue={issue}
+                  isReadOnly={!canEditIssueProperties}
+                  updateIssue={updateIssue}
+                  displayProperties={displayProperties}
+                  activeLayout="List"
+                  isEpic={isEpic}
+                />
+                {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
+                <div
+                  className={cn("hidden", {
+                    "md:flex": isSidebarCollapsed,
+                    "lg:flex": !isSidebarCollapsed,
+                  })}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  {quickActions({
+                    issue,
+                    parentRef: issueRef,
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="h-4 w-4">
+                <Spinner className="h-4 w-4" />
               </div>
-            </>
-          ) : (
-            <div className="h-4 w-4">
-              <Spinner className="h-4 w-4" />
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </Row>
     </ControlLink>
   );

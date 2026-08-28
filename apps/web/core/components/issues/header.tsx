@@ -30,6 +30,7 @@ import { useUserPermissions } from "@/hooks/store/user";
 import { useAppRouter } from "@/hooks/use-app-router";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 import { decodeRouteProjectId, isLinearDisplayMode } from "@/helpers/linear-display.helper";
+import { useLinearMobile } from "@/hooks/use-linear-mobile";
 // plane web imports
 import { CommonProjectBreadcrumbs } from "@/components/breadcrumbs/common";
 
@@ -58,6 +59,7 @@ export const IssuesHeader = observer(function IssuesHeader() {
   const { toggleCreateIssueModal } = useCommandPalette();
   const { allowPermissions } = useUserPermissions();
   const { isMobile } = usePlatformOS();
+  const isLinearMobile = useLinearMobile();
 
   const SPACE_APP_URL =
     (SPACE_BASE_URL.trim() === "" && typeof window !== "undefined" ? window.location.origin : SPACE_BASE_URL) +
@@ -121,7 +123,7 @@ export const IssuesHeader = observer(function IssuesHeader() {
             canUserCreateIssue={canUserCreateIssue}
           />
         </div>
-        {canUserCreateIssue && (
+        {canUserCreateIssue && !isLinearMobile && (
           <Button
             variant="primary"
             size="lg"

@@ -6,12 +6,25 @@
 
 import { observer } from "mobx-react";
 import { Outlet } from "react-router";
+import { LinearMobileShell } from "@/components/linear-mobile/shell";
 import { ProjectsAppPowerKProvider } from "@/components/power-k/projects-app-provider";
+import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
 // plane web components
 import { ProjectAppSidebar } from "./_sidebar";
 import { ExtendedProjectSidebar } from "./extended-project-sidebar";
 
 function WorkspaceLayout() {
+  if (isLinearDisplayMode()) {
+    return (
+      <>
+        <ProjectsAppPowerKProvider />
+        <LinearMobileShell sidebar={<ProjectAppSidebar />} extendedSidebar={<ExtendedProjectSidebar />}>
+          <Outlet />
+        </LinearMobileShell>
+      </>
+    );
+  }
+
   return (
     <>
       <ProjectsAppPowerKProvider />
