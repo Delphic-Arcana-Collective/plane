@@ -58,6 +58,22 @@ export function isLinearProtectedComment(
   );
 }
 
+export type IssuePlatformKind = "linear" | "plane";
+
+export const ISSUE_PLATFORM_META: Record<IssuePlatformKind, { label: string; color: string }> = {
+  linear: { label: "Linear", color: "#5E6AD2" },
+  plane: { label: "Plane", color: "#0EA5E9" },
+};
+
+/** Which upstream platform owns this work item (Linear display mode only). */
+export function getIssuePlatformKind(
+  issue: (Partial<TIssue> & LinearSourceMeta) | null | undefined
+): IssuePlatformKind | null {
+  if (!isLinearDisplayMode() || !issue) return null;
+  if (isLinearProtectedIssue(issue)) return "linear";
+  return "plane";
+}
+
 export function getLinearWorkspaceSlug(): string {
   return import.meta.env.VITE_LINEAR_WORKSPACE_SLUG || "delphic";
 }

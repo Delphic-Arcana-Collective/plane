@@ -13,6 +13,7 @@ import { useProject } from "@/hooks/store/use-project";
 import { useProjectState } from "@/hooks/store/use-project-state";
 // components
 import { IssueIdentifier } from "@/components/issues/issue-detail/issue-identifier";
+import { IssuePlatformBadge } from "@/components/issues/issue-platform-badge";
 // local imports
 import { WorkItemPreviewCardDate } from "./date";
 
@@ -23,7 +24,8 @@ type Props = {
     id?: string;
     name?: string;
   };
-  workItem: Pick<TIssue, "id" | "name" | "sequence_id" | "priority" | "start_date" | "target_date" | "type_id">;
+  workItem: Pick<TIssue, "id" | "name" | "sequence_id" | "priority" | "start_date" | "target_date" | "type_id"> &
+    Partial<Pick<TIssue, "source" | "tag" | "system_tag">>;
 };
 
 export const WorkItemPreviewCard = observer(function WorkItemPreviewCard(props: Props) {
@@ -40,14 +42,17 @@ export const WorkItemPreviewCard = observer(function WorkItemPreviewCard(props: 
   return (
     <div className="w-72 space-y-2 rounded-lg border-[0.5px] border-strong bg-surface-1 p-3 shadow-raised-200">
       <div className="flex items-center justify-between gap-3 text-secondary">
-        <IssueIdentifier
-          size="xs"
-          variant="secondary"
-          projectId={projectId}
-          projectIdentifier={projectIdentifier}
-          issueSequenceId={workItem.sequence_id}
-          issueTypeId={workItem.type_id}
-        />
+        <div className="flex min-w-0 items-center gap-1.5">
+          <IssueIdentifier
+            size="xs"
+            variant="secondary"
+            projectId={projectId}
+            projectIdentifier={projectIdentifier}
+            issueSequenceId={workItem.sequence_id}
+            issueTypeId={workItem.type_id}
+          />
+          <IssuePlatformBadge issue={workItem} />
+        </div>
         <div className="flex shrink-0 items-center gap-1">
           <StateGroupIcon stateGroup={stateGroup} className="size-3 shrink-0" />
           <p className="text-11 font-medium">{stateName}</p>

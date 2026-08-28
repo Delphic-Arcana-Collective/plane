@@ -45,6 +45,7 @@ import { usePlatformOS } from "@/hooks/use-platform-os";
 // local components
 import { IssuePropertyLabels } from "./labels";
 import { WithDisplayPropertiesHOC } from "./with-display-properties-HOC";
+import { IssuePlatformBadge } from "@/components/issues/issue-platform-badge";
 
 export interface IIssueProperties {
   issue: TIssue;
@@ -196,6 +197,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
 
   return (
     <div className={className}>
+      <IssuePlatformBadge issue={issue} />
       {/* basic properties */}
       {/* state */}
       <WithDisplayPropertiesHOC displayProperties={displayProperties} displayPropertyKey="state">

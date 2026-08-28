@@ -8,8 +8,9 @@ Replace the KV snapshot + in-memory navigation model with **Cloudflare D1** as t
 
 | Branch                                 | Purpose                                               |
 | -------------------------------------- | ----------------------------------------------------- |
-| `ref/preview-linear-navigation-backup` | Previous Linear navigation / KV work (reference only) |
-| `refactor/d1-unified-issues-storage`   | New work on pre-azusayn Plane baseline (`1d0ee2482`)  |
+| `legacy`                               | Previous `preview` (Linear navigation / KV era)       |
+| `ref/preview-linear-navigation-backup` | Snapshot of that work (reference only)                |
+| `preview`                              | Active D1 unified storage + BFF (current development) |
 
 ## Data model
 

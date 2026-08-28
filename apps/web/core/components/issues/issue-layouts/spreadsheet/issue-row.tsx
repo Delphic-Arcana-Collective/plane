@@ -4,6 +4,8 @@
  * See the LICENSE file for details.
  */
 
+// oxlint-disable jsx-a11y/click-events-have-key-events jsx-a11y/no-static-element-interactions
+
 import type { Dispatch, MouseEvent, MutableRefObject, SetStateAction } from "react";
 import { useRef, useState } from "react";
 import { observer } from "mobx-react";
@@ -24,6 +26,7 @@ import { cn, generateWorkItemLink } from "@plane/utils";
 import { MultipleSelectEntityAction } from "@/components/core/multiple-select";
 import RenderIfVisible from "@/components/core/render-if-visible-HOC";
 import { IssueIdentifier } from "@/components/issues/issue-detail/issue-identifier";
+import { IssuePlatformBadge } from "@/components/issues/issue-platform-badge";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
@@ -283,7 +286,7 @@ const IssueRowDetails = observer(function IssueRowDetails(props: IssueRowDetails
           >
             {/* Identifier section - conditionally rendered */}
             {displayProperties?.key && (
-              <div className="flex h-full min-w-24 flex-shrink-0 items-center">
+              <div className="flex h-full min-w-24 flex-shrink-0 items-center gap-1">
                 <div className="relative flex cursor-pointer items-center text-11 hover:text-primary">
                   {issueDetail.project_id && (
                     <IssueIdentifier
@@ -295,6 +298,7 @@ const IssueRowDetails = observer(function IssueRowDetails(props: IssueRowDetails
                     />
                   )}
                 </div>
+                <IssuePlatformBadge issue={issueDetail} />
               </div>
             )}
 
@@ -356,7 +360,8 @@ const IssueRowDetails = observer(function IssueRowDetails(props: IssueRowDetails
               </div>
 
               <div className="my-auto flex h-full w-full items-center justify-between gap-2 truncate">
-                <div className="line-clamp-1 w-full text-14 text-primary">
+                <div className="line-clamp-1 flex w-full min-w-0 items-center gap-1.5 text-14 text-primary">
+                  {!displayProperties?.key && <IssuePlatformBadge issue={issueDetail} className="flex-shrink-0" />}
                   <div className="w-full overflow-hidden">
                     <Tooltip tooltipContent={issueDetail.name} isMobile={isMobile}>
                       <div

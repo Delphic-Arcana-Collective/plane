@@ -29,6 +29,7 @@ import type { TIssueOperations } from "../issue-detail";
 import { IssueParentDetail } from "../issue-detail/parent";
 import { IssueReaction } from "../issue-detail/reactions";
 import { IssueTitleInput } from "../title-input";
+import { IssuePlatformBadge } from "@/components/issues/issue-platform-badge";
 // services init
 const workItemVersionService = new WorkItemVersionService();
 
@@ -92,7 +93,10 @@ export const PeekOverviewIssueDetails = observer(function PeekOverviewIssueDetai
         />
       )}
       <div className="flex items-center justify-between gap-2">
-        <IssueTypeSwitcher issueId={issueId} disabled={isArchived || disabled} />
+        <div className="flex items-center gap-2">
+          <IssueTypeSwitcher issueId={issueId} disabled={isArchived || disabled} />
+          <IssuePlatformBadge issue={issue} />
+        </div>
       </div>
       <IssueTitleInput
         workspaceSlug={workspaceSlug}
