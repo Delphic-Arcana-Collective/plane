@@ -9,8 +9,7 @@ import type { ComponentType } from "react";
 import { observer } from "mobx-react";
 import { useParams, usePathname } from "next/navigation";
 import { MoreHorizontal } from "lucide-react";
-import { EIssuesStoreType } from "@plane/types";
-import { HomeIcon, PlusIcon, SearchIcon, WorkItemsIcon } from "@plane/propel/icons";
+import { HomeIcon, SearchIcon, WorkItemsIcon } from "@plane/propel/icons";
 import { cn } from "@plane/utils";
 import {
   decodeRouteProjectId,
@@ -18,12 +17,11 @@ import {
   getLinearProjectIssuesPath,
   getLinearWorkspaceSlug,
 } from "@/helpers/linear-display.helper";
-import { useCommandPalette } from "@/hooks/store/use-command-palette";
 import { usePowerK } from "@/hooks/store/use-power-k";
 import { useAppRouter } from "@/hooks/use-app-router";
 import { LinearMobileMoreSheet } from "./more-sheet";
 
-type TabId = "home" | "issues" | "create" | "search" | "more";
+type TabId = "home" | "issues" | "search" | "more";
 
 export const LinearMobileBottomTabs = observer(function LinearMobileBottomTabs() {
   const router = useAppRouter();
@@ -31,7 +29,6 @@ export const LinearMobileBottomTabs = observer(function LinearMobileBottomTabs()
   const { workspaceSlug: routeWorkspaceSlug, projectId: routeProjectIdParam } = useParams();
   const workspaceSlug = routeWorkspaceSlug?.toString() || getLinearWorkspaceSlug();
   const routeProjectId = decodeRouteProjectId(routeProjectIdParam?.toString());
-  const { toggleCreateIssueModal } = useCommandPalette();
   const { togglePowerKModal } = usePowerK();
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -48,10 +45,8 @@ export const LinearMobileBottomTabs = observer(function LinearMobileBottomTabs()
   const tabs: {
     id: TabId;
     label: string;
-    // Propel icons accept a broader SVG props shape than a minimal className/strokeWidth type.
     icon: ComponentType<Record<string, unknown>>;
     onClick: () => void;
-    primary?: boolean;
   }[] = [
     {
       id: "home",
@@ -64,13 +59,6 @@ export const LinearMobileBottomTabs = observer(function LinearMobileBottomTabs()
       label: "Issues",
       icon: WorkItemsIcon as ComponentType<Record<string, unknown>>,
       onClick: () => router.push(issuesHref),
-    },
-    {
-      id: "create",
-      label: "Create",
-      icon: PlusIcon as ComponentType<Record<string, unknown>>,
-      primary: true,
-      onClick: () => toggleCreateIssueModal(true, EIssuesStoreType.PROJECT),
     },
     {
       id: "search",
@@ -96,21 +84,6 @@ export const LinearMobileBottomTabs = observer(function LinearMobileBottomTabs()
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = active === tab.id;
-            if (tab.primary) {
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  aria-label={tab.label}
-                  className="flex flex-1 flex-col items-center justify-center gap-0.5"
-                  onClick={tab.onClick}
-                >
-                  <span className="shadow-sm flex size-10 items-center justify-center rounded-full bg-accent-primary text-on-color">
-                    <Icon className="size-5" strokeWidth={2} />
-                  </span>
-                </button>
-              );
-            }
             return (
               <button
                 key={tab.id}

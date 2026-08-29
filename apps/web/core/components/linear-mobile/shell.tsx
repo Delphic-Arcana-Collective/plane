@@ -4,11 +4,14 @@
  * See the LICENSE file for details.
  */
 
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { observer } from "mobx-react";
 import { cn } from "@plane/utils";
 import { useLinearMobile } from "@/hooks/use-linear-mobile";
 import { LinearMobileBottomTabs } from "./bottom-tabs";
+import { LinearMobileCreateFab } from "./create-fab";
+import { LinearMobileProjectDrawer } from "./project-drawer";
 import { LinearMobileTopBar } from "./top-bar";
 
 type Props = {
@@ -20,11 +23,12 @@ type Props = {
 /**
  * Linear-mode workspace chrome.
  * Desktop (≥768): Plane sidebar shell unchanged.
- * Mobile (<768): full-bleed content + top Create bar + bottom tabs (Linear Mobile pattern).
+ * Mobile (<768): full-bleed + top bar (project drawer) + FAB create + bottom tabs.
  */
 export const LinearMobileShell = observer(function LinearMobileShell(props: Props) {
   const { children, sidebar, extendedSidebar } = props;
   const isLinearMobile = useLinearMobile();
+  const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
 
   return (
     <div
@@ -43,9 +47,15 @@ export const LinearMobileShell = observer(function LinearMobileShell(props: Prop
             isLinearMobile && "pb-[calc(3.5rem+env(safe-area-inset-bottom))]"
           )}
         >
-          {isLinearMobile && <LinearMobileTopBar />}
+          {isLinearMobile && <LinearMobileTopBar onOpenProjects={() => setProjectDrawerOpen(true)} />}
           {children}
-          {isLinearMobile && <LinearMobileBottomTabs />}
+          {isLinearMobile && (
+            <>
+              <LinearMobileCreateFab />
+              <LinearMobileBottomTabs />
+              <LinearMobileProjectDrawer open={projectDrawerOpen} onClose={() => setProjectDrawerOpen(false)} />
+            </>
+          )}
         </main>
       </div>
     </div>

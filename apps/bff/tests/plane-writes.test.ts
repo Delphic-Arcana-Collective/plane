@@ -220,4 +220,38 @@ describe("plane write routes", () => {
     );
     expect(response.status).toBe(403);
   });
+
+  it("updates Plane issue dates via issue-dates and skips Linear issues", async () => {
+    const { app, backend } = await createD1WriteApp();
+    const projectId = "project-del-1";
+
+    const createIssue = await app.request(`/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/${projectId}/issues/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Dated plane issue", start_date: "2026-01-01", target_date: "2026-01-05" }),
+    });
+    expect(createIssue.status).toBe(201);
+    const issue = (await createIssue.json()) as TIssue;
+
+    const response = await app.request(`/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/${projectId}/issue-dates/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        updates: [
+          { id: issue.id, start_date: "2026-02-01", target_date: "2026-02-10" },
+          { id: "issue-1", start_date: "2026-03-01", target_date: "2026-03-10" },
+        ],
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { updated: number };
+    expect(body.updated).toBe(1);
+
+    await backend.ensureLoaded();
+    const saved = backend.getIssue(projectId, issue.id);
+    expect(saved?.start_date).toBe("2026-02-01");
+    expect(saved?.target_date).toBe("2026-02-10");
+    const linear = backend.getIssue(projectId, "issue-1");
+    expect(linear?.start_date).not.toBe("2026-03-01");
+  });
 });

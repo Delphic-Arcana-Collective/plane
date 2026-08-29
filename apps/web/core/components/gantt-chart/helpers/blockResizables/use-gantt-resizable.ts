@@ -27,40 +27,45 @@ export const useGanttResizable = (
   });
   const ganttContainerDimensions = useRef<DOMRect | undefined>();
   const currMouseEvent = useRef<MouseEvent | undefined>();
+  /** True only after pointer moved during this drag — plain clicks must not POST dates. */
+  const didDragRef = useRef(false);
   // states
   const { currentViewData, updateBlockPosition, setIsDragging, getUpdatedPositionAfterDrag } = useTimeLineChartStore();
   const [isMoving, setIsMoving] = useState<"left" | "right" | "move" | undefined>();
 
   // handle block resize from the left end
   const handleBlockDrag = (
-    e: React.MouseEvent<HTMLDivElement, MouseEvent>,
+    event: React.MouseEvent<HTMLDivElement, MouseEvent>,
     dragDirection: "left" | "right" | "move"
   ) => {
     const ganttContainerElement = ganttContainerRef.current;
     if (!currentViewData || !resizableRef.current || !block.position || !ganttContainerElement) return;
 
-    if (e.button !== 0) return;
+    if (event.button !== 0) return;
 
     const resizableDiv = resizableRef.current;
+    didDragRef.current = false;
 
     ganttContainerDimensions.current = ganttContainerElement.getBoundingClientRect();
 
     const dayWidth = currentViewData.data.dayWidth;
-    const mouseX = e.clientX - ganttContainerDimensions.current.left - SIDEBAR_WIDTH + ganttContainerElement.scrollLeft;
+    const startMouseX =
+      event.clientX - ganttContainerDimensions.current.left - SIDEBAR_WIDTH + ganttContainerElement.scrollLeft;
 
     // record position on drag start
     initialPositionRef.current = {
       width: block.position.width ?? 0,
       marginLeft: block.position.marginLeft ?? 0,
-      offsetX: mouseX - block.position.marginLeft,
+      offsetX: startMouseX - block.position.marginLeft,
     };
 
     const handleOnScroll = () => {
       if (currMouseEvent.current) handleMouseMove(currMouseEvent.current);
     };
 
-    const handleMouseMove = (e: MouseEvent) => {
-      currMouseEvent.current = e;
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      currMouseEvent.current = moveEvent;
+      didDragRef.current = true;
       setIsMoving(dragDirection);
       setIsDragging(true);
 
@@ -68,14 +73,14 @@ export const useGanttResizable = (
 
       const { left: containerLeft } = ganttContainerDimensions.current;
 
-      const mouseX = e.clientX - containerLeft - SIDEBAR_WIDTH + ganttContainerElement.scrollLeft;
+      const currentMouseX = moveEvent.clientX - containerLeft - SIDEBAR_WIDTH + ganttContainerElement.scrollLeft;
 
       let width = initialPositionRef.current.width;
       let marginLeft = initialPositionRef.current.marginLeft;
 
       if (dragDirection === "left") {
         // calculate new marginLeft and update the initial marginLeft to the newly calculated one
-        marginLeft = Math.round(mouseX / dayWidth) * dayWidth;
+        marginLeft = Math.round(currentMouseX / dayWidth) * dayWidth;
         // get Dimensions from dom's style
         const prevMarginLeft = parseFloat(resizableDiv.style.marginLeft.slice(0, -2));
         const prevWidth = parseFloat(resizableDiv.style.width.slice(0, -2));
@@ -85,18 +90,18 @@ export const useGanttResizable = (
         width = block.target_date ? prevWidth + marginDelta : DEFAULT_BLOCK_WIDTH;
       } else if (dragDirection === "right") {
         // calculate new width and update the initialMarginLeft using +=
-        width = Math.round(mouseX / dayWidth) * dayWidth - marginLeft;
+        width = Math.round(currentMouseX / dayWidth) * dayWidth - marginLeft;
 
         // If start date does not exist while dragging with right handle the revert to default width and adjust marginLeft accordingly
         if (!block.start_date) {
           // calculate new right and update the marginLeft to the newly calculated one
-          const marginRight = Math.round(mouseX / dayWidth) * dayWidth;
+          const marginRight = Math.round(currentMouseX / dayWidth) * dayWidth;
           marginLeft = marginRight - DEFAULT_BLOCK_WIDTH;
           width = DEFAULT_BLOCK_WIDTH;
         }
       } else if (dragDirection === "move") {
         // calculate new marginLeft and update the initial marginLeft using -=
-        marginLeft = Math.round((mouseX - initialPositionRef.current.offsetX) / dayWidth) * dayWidth;
+        marginLeft = Math.round((currentMouseX - initialPositionRef.current.offsetX) / dayWidth) * dayWidth;
       }
 
       // block needs to be at least 1 dayWidth Wide
@@ -119,6 +124,12 @@ export const useGanttResizable = (
       document.removeEventListener("mousemove", handleMouseMove);
       ganttContainerElement.removeEventListener("scroll", handleOnScroll);
       document.removeEventListener("mouseup", handleMouseUp);
+
+      // Click-to-open must not hit the dates API (BFF/Plane toast noise).
+      if (!didDragRef.current) {
+        setIsDragging(false);
+        return;
+      }
 
       // update half blocks only when the missing side of the block is directly dragged
       const shouldUpdateHalfBlock =

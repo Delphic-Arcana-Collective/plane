@@ -381,5 +381,55 @@ export function createPlaneWriteRoutes() {
     return c.body(null, 204);
   });
 
+  /** Gantt / waterfall date updates — Plane issues only; Linear-protected rows are skipped. */
+  app.post("/api/workspaces/:slug/projects/:projectId/issue-dates/", async (c) => {
+    if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
+    const cache = getCache(c);
+    if (!isD1Backend(cache)) return c.json({ error: "D1 storage not configured" }, 503);
+
+    const projectId = c.req.param("projectId");
+    const project = cache.cache.projects.find((entry) => entry.id === projectId);
+    if (!project) return c.json({ error: "Not found" }, 404);
+
+    const body = (await c.req.json()) as {
+      updates?: { id: string; start_date?: string | null; target_date?: string | null }[];
+    };
+    const updates = body.updates ?? [];
+    if (updates.length === 0) return c.json({ updated: 0 });
+
+    const states = await cache.getProjectStates(projectId);
+    const defaultStateId = pickDefaultStateId(states);
+    const now = new Date().toISOString();
+
+    const results = await Promise.all(
+      updates.map(async (update) => {
+        const existing = cache.getIssue(projectId, update.id) as IssueSourceMeta | undefined;
+        if (!existing || isLinearProtectedIssue(existing)) return false;
+
+        const merged = normalizePlaneIssue(
+          {
+            ...existing,
+            start_date: update.start_date !== undefined ? update.start_date : existing.start_date,
+            target_date: update.target_date !== undefined ? update.target_date : existing.target_date,
+            updated_at: now,
+          } as TIssue,
+          { defaultStateId, fallbackTimestamp: now }
+        );
+
+        try {
+          await cache.upsertPlaneIssue(merged, project.name);
+          return true;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message.includes("Linear-tagged")) return false;
+          throw error;
+        }
+      })
+    );
+
+    await cache.ensureLoaded();
+    return c.json({ updated: results.filter(Boolean).length });
+  });
+
   return app;
 }
