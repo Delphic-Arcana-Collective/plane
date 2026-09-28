@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import type { TIssue, TIssueComment, IUserLite } from "@plane/types";
+import type { IIssueLabel, TIssue, TIssueComment, IUserLite } from "@plane/types";
 import { EIssueCommentAccessSpecifier } from "@plane/types";
-import { createBootstrapContext } from "../bootstrap/session.js";
+import { BFF_WORKSPACE_ID, createBootstrapContext } from "../bootstrap/session.js";
 import { D1KvCacheBackend } from "../cache/d1-kv-backend.js";
 import { DATA_SOURCE_LINEAR, DATA_SOURCE_PLANE, TAG_LINEAR, TAG_PLANE } from "../db/constants.js";
 import { normalizePlaneIssue, pickDefaultStateId } from "../db/serialize.js";
@@ -13,10 +13,22 @@ function isD1Backend(cache: unknown): cache is D1KvCacheBackend {
 
 type IssueSourceMeta = TIssue & { tag?: string; system_tag?: string; source?: string };
 type CommentSourceMeta = TIssueComment & { tag?: string; system_tag?: string; source?: string };
+type LabelSourceMeta = IIssueLabel & { tag?: string; system_tag?: string; source?: string };
 
 function isLinearProtectedIssue(issue: IssueSourceMeta | undefined): boolean {
   if (!issue) return false;
   return issue.tag === TAG_LINEAR || issue.system_tag === TAG_LINEAR || issue.source === DATA_SOURCE_LINEAR;
+}
+
+function isLinearProtectedLabel(label: LabelSourceMeta | undefined): boolean {
+  if (!label) return false;
+  return label.tag === TAG_LINEAR || label.system_tag === TAG_LINEAR || label.source === DATA_SOURCE_LINEAR;
+}
+
+function findProjectLabel(cache: D1KvCacheBackend, projectId: string, labelId: string): LabelSourceMeta | undefined {
+  return cache.cache.labelsByProject.get(projectId)?.find((entry) => entry.id === labelId) as
+    | LabelSourceMeta
+    | undefined;
 }
 
 function isLinearProtectedComment(comment: CommentSourceMeta | undefined): boolean {
@@ -377,6 +389,116 @@ export function createPlaneWriteRoutes() {
 
     const deleted = await cache.deletePlaneComment(commentId);
     if (!deleted) return c.json({ error: "Linear comments are read-only" }, 403);
+    await cache.ensureLoaded();
+    return c.body(null, 204);
+  });
+
+  app.post("/api/workspaces/:slug/projects/:projectId/issue-labels/", async (c) => {
+    if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
+    const cache = getCache(c);
+    if (!isD1Backend(cache)) return c.json({ error: "D1 storage not configured" }, 503);
+
+    const projectId = c.req.param("projectId");
+    const project = cache.cache.projects.find((entry) => entry.id === projectId);
+    if (!project) return c.json({ error: "Not found" }, 404);
+
+    const body = stripSourceFields((await c.req.json()) as Partial<IIssueLabel>);
+    const name = body.name?.trim();
+    if (!name) return c.json({ error: "Name is required" }, 400);
+
+    const existingLabels = cache.cache.labelsByProject.get(projectId) ?? [];
+    if (existingLabels.some((label) => label.name.toLowerCase() === name.toLowerCase())) {
+      return c.json({ error: "Label already exists" }, 400);
+    }
+
+    const maxSort = existingLabels.reduce((max, label) => Math.max(max, label.sort_order ?? 0), 0);
+    const label: IIssueLabel = {
+      id: crypto.randomUUID(),
+      name,
+      color: body.color?.trim() || "#999999",
+      project_id: projectId,
+      workspace_id: BFF_WORKSPACE_ID,
+      parent: body.parent ?? null,
+      sort_order: body.sort_order ?? maxSort + 1000,
+    };
+
+    await cache.upsertPlaneLabel(label);
+    await cache.ensureLoaded();
+    const saved = findProjectLabel(cache, projectId, label.id) ?? {
+      ...label,
+      source: DATA_SOURCE_PLANE,
+      system_tag: TAG_PLANE,
+      tag: TAG_PLANE,
+    };
+    return c.json(saved, 201);
+  });
+
+  app.patch("/api/workspaces/:slug/projects/:projectId/issue-labels/:labelId/", async (c) => {
+    if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
+    const cache = getCache(c);
+    if (!isD1Backend(cache)) return c.json({ error: "D1 storage not configured" }, 503);
+
+    const projectId = c.req.param("projectId");
+    const labelId = c.req.param("labelId");
+    const existing = findProjectLabel(cache, projectId, labelId);
+    if (!existing) return c.json({ error: "Not found" }, 404);
+    if (isLinearProtectedLabel(existing)) {
+      return c.json({ error: "Linear labels are read-only" }, 403);
+    }
+
+    const body = stripSourceFields((await c.req.json()) as Partial<IIssueLabel>);
+    const name = body.name?.trim() ?? existing.name;
+    if (!name) return c.json({ error: "Name is required" }, 400);
+
+    const siblings = cache.cache.labelsByProject.get(projectId) ?? [];
+    if (siblings.some((label) => label.id !== labelId && label.name.toLowerCase() === name.toLowerCase())) {
+      return c.json({ error: "Label already exists" }, 400);
+    }
+
+    const merged: IIssueLabel = {
+      id: labelId,
+      name,
+      color: body.color?.trim() || existing.color || "#999999",
+      project_id: projectId,
+      workspace_id: existing.workspace_id || BFF_WORKSPACE_ID,
+      parent: body.parent !== undefined ? body.parent : existing.parent,
+      sort_order: body.sort_order ?? existing.sort_order,
+    };
+
+    try {
+      await cache.upsertPlaneLabel(merged);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Linear-tagged")) {
+        return c.json({ error: "Linear labels are read-only" }, 403);
+      }
+      throw error;
+    }
+    await cache.ensureLoaded();
+    const saved = findProjectLabel(cache, projectId, labelId) ?? {
+      ...merged,
+      source: DATA_SOURCE_PLANE,
+      system_tag: TAG_PLANE,
+      tag: TAG_PLANE,
+    };
+    return c.json(saved);
+  });
+
+  app.delete("/api/workspaces/:slug/projects/:projectId/issue-labels/:labelId/", async (c) => {
+    if (!matchWorkspace(c, c.req.param("slug"))) return c.json({ error: "Not found" }, 404);
+    const cache = getCache(c);
+    if (!isD1Backend(cache)) return c.json({ error: "D1 storage not configured" }, 503);
+
+    const projectId = c.req.param("projectId");
+    const labelId = c.req.param("labelId");
+    const existing = findProjectLabel(cache, projectId, labelId);
+    if (!existing) return c.json({ error: "Not found" }, 404);
+    if (isLinearProtectedLabel(existing)) {
+      return c.json({ error: "Cannot delete Linear-tagged label" }, 403);
+    }
+
+    const deleted = await cache.deletePlaneLabel(labelId);
+    if (!deleted) return c.json({ error: "Cannot delete Linear-tagged label" }, 403);
     await cache.ensureLoaded();
     return c.body(null, 204);
   });

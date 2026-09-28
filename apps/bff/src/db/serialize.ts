@@ -430,3 +430,17 @@ export function planeCommentToRow(comment: TIssueComment, workspaceId: string, i
     updated_at: nowIso(),
   };
 }
+
+export function planeLabelToRow(label: IIssueLabel, workspaceId: string): LabelRow {
+  const source = DATA_SOURCE_PLANE;
+  return {
+    id: rowId(source, label.id),
+    workspace_id: workspaceId,
+    project_id: rowId(source, label.project_id),
+    source,
+    external_id: label.id,
+    tag: TAG_PLANE,
+    payload: serializePayload(label, DATA_SOURCE_PLANE),
+    updated_at: nowIso(),
+  };
+}

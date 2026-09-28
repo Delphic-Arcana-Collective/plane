@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TIssue, TIssueComment } from "@plane/types";
+import type { IIssueLabel, TIssue, TIssueComment } from "@plane/types";
 import { EIssueCommentAccessSpecifier } from "@plane/types";
 import { D1KvCacheBackend } from "../src/cache/d1-kv-backend.js";
 import { BFF_WORKSPACE_ID, BFF_VIEWER_USER_ID } from "../src/bootstrap/session.js";
@@ -219,6 +219,43 @@ describe("plane write routes", () => {
       }
     );
     expect(response.status).toBe(403);
+  });
+
+  it("creates a Plane label and rejects Linear label mutation", async () => {
+    const { app, backend } = await createD1WriteApp();
+    const projectId = "project-del-1";
+
+    const create = await app.request(`/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/${projectId}/issue-labels/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Plane Tag", color: "#112233", source: "linear", tag: "Linear" }),
+    });
+    expect(create.status).toBe(201);
+    const label = (await create.json()) as IIssueLabel & { source?: string; tag?: string };
+    expect(label.id).toBeTruthy();
+    expect(label.name).toBe("Plane Tag");
+    expect(label.color).toBe("#112233");
+    expect(label.project_id).toBe(projectId);
+    expect(label.source).toBe(DATA_SOURCE_PLANE);
+    expect(label.tag).toBe(TAG_PLANE);
+
+    await backend.ensureLoaded();
+    const listed = await backend.getProjectLabels(projectId);
+    expect(listed.some((entry) => entry.id === label.id && entry.name === "Plane Tag")).toBe(true);
+
+    // Snapshot includes at least one Linear label (from team labels) — mutating it must 403.
+    const linearLabels = listed.filter((entry) => (entry as { source?: string }).source === DATA_SOURCE_LINEAR);
+    if (linearLabels.length > 0) {
+      const blocked = await app.request(
+        `/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/${projectId}/issue-labels/${linearLabels[0].id}/`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "nope" }),
+        }
+      );
+      expect(blocked.status).toBe(403);
+    }
   });
 
   it("updates Plane issue dates via issue-dates and skips Linear issues", async () => {

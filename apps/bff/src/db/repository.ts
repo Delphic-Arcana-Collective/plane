@@ -1,4 +1,4 @@
-import type { TIssue, TIssueComment } from "@plane/types";
+import type { IIssueLabel, TIssue, TIssueComment } from "@plane/types";
 import type { LinearSyncSnapshot } from "../linear/client.js";
 import type { Env } from "../env.js";
 import {
@@ -20,6 +20,7 @@ import {
   snapshotToLinearRows,
   planeCommentToRow,
   planeIssueToRow,
+  planeLabelToRow,
 } from "./serialize.js";
 import type { PlaneCache } from "../cache/backend.js";
 
@@ -230,6 +231,41 @@ export class D1Repository {
     const linear = await this.db
       .prepare(
         `SELECT 1 AS ok FROM comments WHERE workspace_id = ? AND external_id = ? AND (source = ? OR tag = ?) LIMIT 1`
+      )
+      .bind(this.workspaceId, externalId, DATA_SOURCE_LINEAR, TAG_LINEAR)
+      .first<{ ok: number }>();
+    if (linear) return false;
+    return false;
+  }
+
+  async upsertPlaneLabel(label: IIssueLabel): Promise<void> {
+    const existing = await this.db
+      .prepare(`SELECT source, tag FROM labels WHERE workspace_id = ? AND external_id = ?`)
+      .bind(this.workspaceId, label.id)
+      .all<{ source: string; tag: string }>();
+
+    const rows = existing.results ?? [];
+    const hasLinear = rows.some((row) => row.source === DATA_SOURCE_LINEAR || isLinearTag(row.tag));
+    const hasPlane = rows.some((row) => row.source === DATA_SOURCE_PLANE);
+
+    if (hasLinear && !hasPlane && rows.length > 0) {
+      throw new Error("Cannot mutate Linear-tagged label");
+    }
+
+    const row = planeLabelToRow(label, this.workspaceId);
+    await this.upsertLabelStmt(row).run();
+  }
+
+  async deletePlaneLabel(externalId: string): Promise<boolean> {
+    const result = await this.db
+      .prepare(`DELETE FROM labels WHERE workspace_id = ? AND source = ? AND tag = ? AND external_id = ?`)
+      .bind(this.workspaceId, DATA_SOURCE_PLANE, TAG_PLANE, externalId)
+      .run();
+    if ((result.meta.changes ?? 0) > 0) return true;
+
+    const linear = await this.db
+      .prepare(
+        `SELECT 1 AS ok FROM labels WHERE workspace_id = ? AND external_id = ? AND (source = ? OR tag = ?) LIMIT 1`
       )
       .bind(this.workspaceId, externalId, DATA_SOURCE_LINEAR, TAG_LINEAR)
       .first<{ ok: number }>();
