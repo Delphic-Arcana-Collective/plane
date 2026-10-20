@@ -7,6 +7,24 @@ import { createServer } from "../src/server.js";
 
 export const TEST_WORKSPACE_SLUG = "delphic";
 
+function encodeJwtPart(value: object): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+export function createTestDelphicToken(expSeconds = 4_102_444_800): string {
+  return `${encodeJwtPart({ alg: "none", typ: "JWT" })}.${encodeJwtPart({ exp: expSeconds, sub: "plane-test" })}.test`;
+}
+
+export const TEST_DELPHIC_TOKEN = createTestDelphicToken();
+
+export function withDelphicAuth(init: RequestInit = {}): RequestInit {
+  const headers = new Headers(init.headers);
+  if (!headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${TEST_DELPHIC_TOKEN}`);
+  }
+  return { ...init, headers };
+}
+
 export function createTestEnv(overrides: Partial<Env> = {}): Env {
   return {
     BFF_PORT: 8000,
@@ -152,7 +170,7 @@ export async function getJson<T>(
   app: Awaited<ReturnType<typeof createSeededTestApp>>,
   path: string
 ): Promise<{ status: number; body: T }> {
-  const response = await app.request(path);
+  const response = await app.request(path, withDelphicAuth());
   const body = (await response.json()) as T;
   return { status: response.status, body };
 }

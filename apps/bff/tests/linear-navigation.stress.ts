@@ -10,7 +10,7 @@ import type { ServerType } from "@hono/node-server";
 import { launch, type Browser, type HTTPRequest, type HTTPResponse, type Page } from "puppeteer-core";
 import { MemoryCacheBackend } from "../src/cache/store.js";
 import { createServer } from "../src/server.js";
-import { createTestEnv, TEST_WORKSPACE_SLUG } from "./test-utils.js";
+import { createTestEnv, TEST_DELPHIC_TOKEN, TEST_WORKSPACE_SLUG } from "./test-utils.js";
 import {
   createNavigationStressSnapshot,
   NAV_PROJECT_A_ID,
@@ -112,6 +112,9 @@ function isCacheableStressBffGet(url: string, stressPort: number): boolean {
 
 async function setupPage(browser: Browser, stressPort: number): Promise<Page> {
   const page = await browser.newPage();
+  await page.evaluateOnNewDocument((token) => {
+    sessionStorage.setItem("delphic_token", token);
+  }, TEST_DELPHIC_TOKEN);
   const responseCache = new Map<string, CachedResponse>();
 
   await page.setRequestInterception(true);
@@ -355,7 +358,10 @@ async function main() {
     const page = await setupPage(browser, port);
     await page.setViewport({ width: 1440, height: 900 });
     await page.goto(`${WEB_URL}/${TEST_WORKSPACE_SLUG}/`, { waitUntil: "domcontentloaded", timeout: 120_000 });
-    await page.evaluate(() => sessionStorage.clear());
+    await page.evaluate((token) => {
+      sessionStorage.clear();
+      sessionStorage.setItem("delphic_token", token);
+    }, TEST_DELPHIC_TOKEN);
 
     await bootToProjectB(page, BOOT_TIMEOUTS, "initial");
     const timeouts = await calibrateTimeouts(page);

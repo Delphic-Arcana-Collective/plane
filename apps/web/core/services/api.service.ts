@@ -5,10 +5,9 @@
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { AxiosInstance, AxiosRequestConfig } from "axios";
+import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import { create } from "axios";
-// helpers
-import { isLinearDisplayMode } from "@/helpers/linear-display.helper";
+import { delphicAuthorizationHeader, isOwnApiRequest, redirectToDelphicAuth } from "@/lib/delphic-auth";
 
 export abstract class APIService {
   protected baseURL: string;
@@ -25,13 +24,29 @@ export abstract class APIService {
   }
 
   private setupInterceptors() {
+    this.axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+      if (!isOwnApiRequest(config.url, config.baseURL, this.baseURL)) return config;
+
+      const header = delphicAuthorizationHeader();
+      if (!header) {
+        redirectToDelphicAuth();
+        return config;
+      }
+
+      config.headers.Authorization = header;
+      return config;
+    });
+
     this.axiosInstance.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        // TODO(auth): remove bypass when real authentication is wired up
-        if (error.response && error.response.status === 401 && !isLinearDisplayMode()) {
-          const currentPath = window.location.pathname;
-          window.location.replace(`/${currentPath ? `?next_path=${currentPath}` : ``}`);
+      (response: AxiosResponse) => {
+        if (response.status === 401 && isOwnApiRequest(response.config.url, response.config.baseURL, this.baseURL)) {
+          redirectToDelphicAuth();
+        }
+        return response;
+      },
+      (error: AxiosError) => {
+        if (error.response?.status === 401 && isOwnApiRequest(error.config?.url, error.config?.baseURL, this.baseURL)) {
+          redirectToDelphicAuth();
         }
         return Promise.reject(error);
       }

@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { bearerToken, isDelphicTokenValid, isPublicDelphicRequest } from "./auth/delphic-token.js";
 import type { CacheBackend } from "./cache/backend.js";
 import { MemoryCacheBackend } from "./cache/store.js";
 import type { Env } from "./env.js";
@@ -26,6 +27,19 @@ export function createServer(env: Env, cacheBackend: CacheBackend) {
       credentials: true,
     })
   );
+  app.use("*", async (c, next) => {
+    if (isPublicDelphicRequest(c.req.method, c.req.path)) {
+      await next();
+      return;
+    }
+
+    const token = bearerToken(c.req.header("Authorization"));
+    if (!isDelphicTokenValid(token)) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    await next();
+  });
   app.use("*", async (c, next) => {
     c.set("env", env);
     c.set("cache", cacheBackend);

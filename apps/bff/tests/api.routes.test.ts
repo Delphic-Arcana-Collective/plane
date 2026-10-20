@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { MemoryCacheBackend } from "../src/cache/store.js";
 import {
+  TEST_DELPHIC_TOKEN,
   TEST_WORKSPACE_SLUG,
   createReadyTestApp,
+  createTestDelphicToken,
   createTestEnv,
   getJson,
   getMockUserId,
@@ -291,7 +293,7 @@ describe("bff linear display API routes", () => {
 
     const patched = await app.request(path, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${TEST_DELPHIC_TOKEN}` },
       body: JSON.stringify({ display_filters: { layout: "kanban", group_by: "state" } }),
     });
     expect(patched.status).toBe(200);
@@ -335,5 +337,31 @@ describe("bff linear display API routes", () => {
     const { status, body } = await getJson<unknown>(app, `/api/workspaces/${slug}/projects/${projectId}/issues/`);
     expect(status).toBe(200);
     expect(body).toHaveProperty("total_count", 2);
+  });
+
+  it("returns 401 when the Firebase token is missing", async () => {
+    const app = await createReadyTestApp();
+    const response = await app.request("/api/users/me/");
+    expect(response.status).toBe(401);
+  });
+
+  it("returns 401 when the Firebase token is expired or not a JWT", async () => {
+    const app = await createReadyTestApp();
+    const expired = await app.request("/api/users/me/", {
+      headers: { Authorization: `Bearer ${createTestDelphicToken(1)}` },
+    });
+    const malformed = await app.request("/api/users/me/", {
+      headers: { Authorization: "Bearer not-a-jwt" },
+    });
+    expect(expired.status).toBe(401);
+    expect(malformed.status).toBe(401);
+  });
+
+  it("serves health and sign-out without a Firebase token", async () => {
+    const app = await createReadyTestApp();
+    const health = await app.request("/health");
+    const signOut = await app.request("/auth/sign-out/", { method: "POST" });
+    expect(health.status).toBe(200);
+    expect(signOut.status).toBe(200);
   });
 });

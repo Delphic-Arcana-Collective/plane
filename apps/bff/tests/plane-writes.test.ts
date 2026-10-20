@@ -6,7 +6,7 @@ import { BFF_WORKSPACE_ID, BFF_VIEWER_USER_ID } from "../src/bootstrap/session.j
 import { DATA_SOURCE_LINEAR, DATA_SOURCE_PLANE, TAG_LINEAR, TAG_PLANE } from "../src/db/constants.js";
 import { D1Repository } from "../src/db/repository.js";
 import { createServer } from "../src/server.js";
-import { createTestEnv, createTestSnapshot, TEST_WORKSPACE_SLUG } from "./test-utils.js";
+import { createTestEnv, createTestSnapshot, TEST_DELPHIC_TOKEN, TEST_WORKSPACE_SLUG } from "./test-utils.js";
 import { MemoryD1Database } from "./memory-d1.js";
 
 class MockKVNamespace implements KVNamespace {
@@ -49,7 +49,7 @@ describe("plane write routes", () => {
     const projectId = "project-del-1";
     const response = await app.request(`/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/${projectId}/issues/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${TEST_DELPHIC_TOKEN}` },
       body: JSON.stringify({ name: "Plane create test", source: "linear", tag: "Linear" }),
     });
     expect(response.status).toBe(201);
@@ -73,7 +73,7 @@ describe("plane write routes", () => {
       `/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/project-del-1/issues/issue-1/`,
       {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${TEST_DELPHIC_TOKEN}` },
         body: JSON.stringify({ name: "should fail" }),
       }
     );
@@ -86,7 +86,7 @@ describe("plane write routes", () => {
 
     const createIssue = await app.request(`/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/${projectId}/issues/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${TEST_DELPHIC_TOKEN}` },
       body: JSON.stringify({ name: "Comment parent" }),
     });
     expect(createIssue.status).toBe(201);
@@ -96,7 +96,7 @@ describe("plane write routes", () => {
       `/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/${projectId}/issues/${issue.id}/comments/`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${TEST_DELPHIC_TOKEN}` },
         body: JSON.stringify({
           comment_html: "<p>hello plane</p>",
           source: "linear",
@@ -124,7 +124,7 @@ describe("plane write routes", () => {
       `/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/project-del-1/issues/issue-1/comments/`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${TEST_DELPHIC_TOKEN}` },
         body: JSON.stringify({ comment_html: "<p>nope</p>" }),
       }
     );
@@ -214,7 +214,7 @@ describe("plane write routes", () => {
       `/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/project-del-1/issues/issue-1/comments/linear-comment-1/`,
       {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${TEST_DELPHIC_TOKEN}` },
         body: JSON.stringify({ comment_html: "<p>edit</p>" }),
       }
     );
@@ -227,7 +227,7 @@ describe("plane write routes", () => {
 
     const create = await app.request(`/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/${projectId}/issue-labels/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${TEST_DELPHIC_TOKEN}` },
       body: JSON.stringify({ name: "Plane Tag", color: "#112233", source: "linear", tag: "Linear" }),
     });
     expect(create.status).toBe(201);
@@ -250,7 +250,7 @@ describe("plane write routes", () => {
         `/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/${projectId}/issue-labels/${linearLabels[0].id}/`,
         {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${TEST_DELPHIC_TOKEN}` },
           body: JSON.stringify({ name: "nope" }),
         }
       );
@@ -264,7 +264,7 @@ describe("plane write routes", () => {
 
     const createIssue = await app.request(`/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/${projectId}/issues/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${TEST_DELPHIC_TOKEN}` },
       body: JSON.stringify({ name: "Dated plane issue", start_date: "2026-01-01", target_date: "2026-01-05" }),
     });
     expect(createIssue.status).toBe(201);
@@ -272,7 +272,7 @@ describe("plane write routes", () => {
 
     const response = await app.request(`/api/workspaces/${TEST_WORKSPACE_SLUG}/projects/${projectId}/issue-dates/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${TEST_DELPHIC_TOKEN}` },
       body: JSON.stringify({
         updates: [
           { id: issue.id, start_date: "2026-02-01", target_date: "2026-02-10" },
