@@ -6,7 +6,7 @@
 
 import type { ReactNode } from "react";
 import { observer } from "mobx-react";
-import { useSearchParams, usePathname } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 // components
 import { LogoSpinner } from "@/components/common/logo-spinner";
@@ -17,6 +17,7 @@ import { getLinearWorkspaceSlug, isLinearDisplayMode } from "@/helpers/linear-di
 import { useWorkspace } from "@/hooks/store/use-workspace";
 import { useUser, useUserProfile, useUserSettings } from "@/hooks/store/user";
 import { useAppRouter } from "@/hooks/use-app-router";
+import { redirectToDelphicAuth } from "@/lib/delphic-auth";
 
 type TPageType = EPageTypes;
 
@@ -31,7 +32,6 @@ const isValidURL = (url: string): boolean => {
 };
 
 export const AuthenticationWrapper = observer(function AuthenticationWrapper(props: TAuthenticationWrapper) {
-  const pathname = usePathname();
   const router = useAppRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next_path");
@@ -109,7 +109,7 @@ export const AuthenticationWrapper = observer(function AuthenticationWrapper(pro
 
   if (pageType === EPageTypes.ONBOARDING) {
     if (!currentUser?.id) {
-      router.push(`/${pathname ? `?next_path=${pathname}` : ``}`);
+      redirectToDelphicAuth();
       return <></>;
     } else {
       if (currentUser && currentUserProfile?.id && isUserOnboard) {
@@ -122,7 +122,7 @@ export const AuthenticationWrapper = observer(function AuthenticationWrapper(pro
 
   if (pageType === EPageTypes.SET_PASSWORD) {
     if (!currentUser?.id) {
-      router.push(`/${pathname ? `?next_path=${pathname}` : ``}`);
+      redirectToDelphicAuth();
       return <></>;
     } else {
       if (currentUser && !currentUser?.is_password_autoset && currentUserProfile?.id && isUserOnboard) {
@@ -141,7 +141,7 @@ export const AuthenticationWrapper = observer(function AuthenticationWrapper(pro
         return <></>;
       }
     } else {
-      router.push(`/${pathname ? `?next_path=${pathname}` : ``}`);
+      redirectToDelphicAuth();
       return <></>;
     }
   }

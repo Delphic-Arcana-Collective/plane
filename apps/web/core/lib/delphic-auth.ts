@@ -20,24 +20,6 @@ export function isDelphicTokenValid(token: string | null | undefined, nowMs = Da
   }
 }
 
-export function urlWithoutTokenFragment(href: string): string {
-  const url = new URL(href);
-  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : "";
-  if (!hash) return url.toString();
-
-  const params = new URLSearchParams(hash);
-  if (!params.has("token")) return url.toString();
-
-  params.delete("token");
-  const rest = params.toString();
-  url.hash = rest ? `#${rest}` : "";
-  return url.toString();
-}
-
-export function delphicAuthRedirectUrl(currentHref: string): string {
-  return `${AUTH_ORIGIN}/?redirect=${encodeURIComponent(urlWithoutTokenFragment(currentHref))}`;
-}
-
 export function establishDelphicSession(): boolean {
   const token = readDelphicToken();
   if (isDelphicTokenValid(token)) return true;
@@ -54,7 +36,7 @@ export function delphicAuthorizationHeader(): string | null {
 export function redirectToDelphicAuth(): void {
   if (window.location.origin === AUTH_ORIGIN) return;
   clearDelphicToken();
-  window.location.replace(delphicAuthRedirectUrl(window.location.href));
+  window.location.replace(AUTH_ORIGIN);
 }
 
 export function isOwnApiRequest(url: string | undefined, baseURL: string | undefined, serviceBaseURL: string): boolean {
